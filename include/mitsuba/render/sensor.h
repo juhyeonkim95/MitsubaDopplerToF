@@ -94,6 +94,12 @@ public:
         EDirectionSampleMapsToPixels = 0x2000
     };
 
+    enum ETimeSamplingType {
+        ETimeSamplingUniform = 0x010,
+        ETimeSamplingStratified = 0x020,
+        ETimeSamplingRegular = 0x040
+    };
+
     // =============================================================
     //! @{ \name Additional sensor-related sampling functions
     // =============================================================
@@ -283,6 +289,11 @@ public:
     /// Set the length, for which the shutter remains open
     void setShutterOpenTime(Float time);
 
+    // ADDED //
+    // Sample Time
+    Float sampleTimeStamp(size_t sampleIndex, Float rv1) const;
+    bool hasTimeSampler() const;
+
     /**
      * \brief Does the method \ref sampleRay() require a uniformly distributed
      * sample for the time-dependent component?
@@ -371,7 +382,11 @@ protected:
     Vector2 m_invResolution;
     Float m_shutterOpen;
     Float m_shutterOpenTime;
+    size_t m_timeSampleCount;
+    Float* m_precalculatedTimeSamples;
+    ETimeSamplingType m_timeSamplingType;
     Float m_aspect;
+    bool m_useSameTimeSamplesOverPathSpace;
 };
 
 /**

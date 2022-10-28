@@ -172,8 +172,17 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
             if (needsApertureSample)
                 apertureSample = rRec.nextSample2D();
-            if (needsTimeSample)
-                timeSample = rRec.nextSample1D();
+            //if (needsTimeSample)
+            //    timeSample = rRec.nextSample1D();
+            
+
+            if (needsTimeSample){
+                if(sensor->hasTimeSampler()){
+                    timeSample = sensor->sampleTimeStamp(j, rRec.nextSample1D());
+                } else {
+                    timeSample = rRec.nextSample1D();
+                }
+            }
 
             Spectrum spec = sensor->sampleRayDifferential(
                 sensorRay, samplePos, apertureSample, timeSample);
@@ -181,7 +190,15 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             sensorRay.scaleDifferential(diffScaleFactor);
 
             spec *= Li(sensorRay, rRec);
-            block->put(samplePos, spec, rRec.alpha);
+
+            Float timePDF = 1.0;
+            if(needsTimeSample){
+                timePDF = sensor->pdfTime(sensorRay, ELength);
+            }
+            spec /= timePDF;
+            Spectrum offset(1.0f);
+
+            block->put(samplePos, offset + spec, rRec.alpha);
             sampler->advance();
         }
     }
