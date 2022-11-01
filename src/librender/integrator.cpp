@@ -168,7 +168,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
         for (size_t j = 0; j<sampler->getSampleCount(); j++) {
             rRec.newQuery(queryType, sensor->getMedium());
-            Point2 samplePos(Point2(offset) + Vector2(rRec.nextSample2D()));
+            Point2 samplePos(Point2(offset) + Vector2(0.5));
 
             if (needsApertureSample)
                 apertureSample = rRec.nextSample2D();
@@ -187,6 +187,11 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             Spectrum spec = sensor->sampleRayDifferential(
                 sensorRay, samplePos, apertureSample, timeSample);
 
+            if(offset.x == 224 && offset.y == 129){
+                //printf("Point : %f, %f, \n", samplePos.x, samplePos.y);
+                //printf("Time : %lf, %lf, %d\n", sensorRay.time, timeSample, j);
+            }
+
             sensorRay.scaleDifferential(diffScaleFactor);
 
             spec *= Li(sensorRay, rRec);
@@ -196,9 +201,9 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
                 timePDF = sensor->pdfTime(sensorRay, ELength);
             }
             spec /= timePDF;
-            Spectrum offset(1.0f);
+            Spectrum Li_offset(1.0f);
 
-            block->put(samplePos, offset + spec, rRec.alpha);
+            block->put(samplePos, Li_offset + spec, rRec.alpha);
             sampler->advance();
         }
     }

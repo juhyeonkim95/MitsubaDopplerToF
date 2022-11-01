@@ -133,13 +133,14 @@ public:
         Float w_g = 2 * M_PI * m_illumination_modulation_frequency_mhz * 1e6;
         Float w_f = 2 * M_PI * m_sensor_modulation_frequency_mhz * 1e6;
         Float delta_t = path_length / (3e8);
+        Float phi = (2 * M_PI * m_illumination_modulation_frequency_mhz) / 300 * path_length;
 
         if(m_low_frequency_component_only){
-            Float fg_t = 0.25 * std::cos((w_g - w_f) * ray_time - w_g * delta_t);
+            Float fg_t = 0.25 * std::cos((w_f - w_g) * ray_time + phi);
             return fg_t;
         } 
         
-        Float g_t = 0.5 * std::cos(w_g * (ray_time - delta_t)) + 0.5;
+        Float g_t = 0.5 * std::cos(w_g * ray_time - phi) + 0.5;
         Float f_t = std::cos(w_f * ray_time);
         return f_t * g_t;
     }
@@ -232,7 +233,7 @@ public:
                         Float em_path_length = path_length + dRec.dist;
 
                         Float em_modulation_weight = evalModulationWeight(ray.time, em_path_length);
-
+                        
                         Li += throughput * value * bsdfVal * weight * em_modulation_weight;
                     }
                 }

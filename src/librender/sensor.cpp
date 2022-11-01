@@ -45,9 +45,9 @@ Sensor::Sensor(const Properties &props)
         m_timeSamplingType = ETimeSamplingType::ETimeSamplingUniform;
     } else if (strcmp(timeSamplingType.c_str(), "regular") == 0){
         m_timeSamplingType = ETimeSamplingType::ETimeSamplingRegular;
+        m_useSameTimeSamplesOverPathSpace = true;
     } else if (strcmp(timeSamplingType.c_str(), "stratified") == 0){
         m_timeSamplingType = ETimeSamplingType::ETimeSamplingStratified;
-        m_useSameTimeSamplesOverPathSpace = true;
     }
 }
 

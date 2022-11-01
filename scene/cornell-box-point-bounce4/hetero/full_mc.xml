@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-
-<scene version="0.6.0" >
-	<default name="timeSampleCount" value="0" />
-	<include filename="common.xml"/>
-</scene>

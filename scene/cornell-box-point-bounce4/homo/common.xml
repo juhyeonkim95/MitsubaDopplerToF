@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-
-<scene version="0.6.0" >
-	<default name="w_f" value="30" />
-	<default name="sampleCount" value="2048" />
-	<include filename="../scene.xml"/>
-</scene>

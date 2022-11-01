@@ -142,7 +142,7 @@ public:
         Float c = f_value_ratio_inc / t;
 
         Float s1 = 0.5;
-        if(std::abs(a) < 1e-5){
+        if(std::abs(a) < 1e-3){
             Float BT = std::cos(b) * t;
             Float B0 = 0;
             if(!m_force_constant_attenuation){
@@ -213,7 +213,8 @@ public:
             if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
                 && (!m_hideEmitters || scattered))
             {
-                Li += throughput * its.Le(-ray.d);
+                Float dem_length_weight = evalIntegratedModulationWeight(m_time, path_length, path_length, 0);
+                Li += throughput * its.Le(-ray.d) * dem_length_weight;
             }
 
             /* Include radiance from a subsurface scattering model if requested */

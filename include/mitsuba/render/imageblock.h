@@ -130,6 +130,15 @@ public:
         return put(pos, temp);
     }
 
+    FINLINE bool put_no_recon(const Point2 &pos, const Spectrum &spec, Float alpha) {
+        Float temp[SPECTRUM_SAMPLES + 2];
+        for (int i=0; i<SPECTRUM_SAMPLES; ++i)
+            temp[i] = spec[i];
+        temp[SPECTRUM_SAMPLES] = alpha;
+        temp[SPECTRUM_SAMPLES + 1] = 1.0f;
+        return put_no_recon(pos, temp);
+    }
+
     /**
      * \brief Store a single sample inside the block
      *
@@ -184,6 +193,45 @@ public:
                         *dest++ += weight * value[k];
                 }
             }
+        }
+
+        return true;
+
+        bad_sample:
+        {
+            std::ostringstream oss;
+            oss << "Invalid sample value : [";
+            for (int i=0; i<channels; ++i) {
+                oss << value[i];
+                if (i+1 < channels)
+                    oss << ", ";
+            }
+            oss << "]";
+            Log(EWarn, "%s", oss.str().c_str());
+        }
+        return false;
+    }
+
+    FINLINE bool put_no_recon(const Point2 &_pos, const Float *value) {
+        const int channels = m_bitmap->getChannelCount();
+
+        /* Check if all sample values are valid */
+        for (int i=0; i<channels; ++i) {
+            if (EXPECT_NOT_TAKEN((!std::isfinite(value[i]) || value[i] < 0) && m_warn))
+                goto bad_sample;
+        }
+
+        {
+            /* Convert to pixel coordinates within the image block */
+            const Point2i pos(
+               (int) (_pos.x - m_offset.x),
+               (int) (_pos.y - m_offset.y));
+
+            const Vector2i &size = m_bitmap->getSize();
+            Float *dest = m_bitmap->getFloatData() + (pos.y * (size_t) size.x + pos.x) * channels;
+
+            for (int k=0; k<channels; ++k)
+                *dest++ += value[k];
         }
 
         return true;
