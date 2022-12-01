@@ -131,42 +131,45 @@ public:
     ToFAnalyticPathTracer(Stream *stream, InstanceManager *manager)
         : MonteCarloIntegrator(stream, manager) { }
 
-    Float evalIntegratedModulationWeight(Float t, Float path_length, Float path_length_at_t, Float f_value_ratio_inc) const{
+    Float evalIntegratedModulationWeight(Float st, Float et, Float path_length, Float path_length_at_t, Float f_value_ratio_inc) const{
         Float w_g = 2 * M_PI * m_illumination_modulation_frequency_mhz * 1e6;
         Float w_f = 2 * M_PI * m_sensor_modulation_frequency_mhz * 1e6;
-        Float delta_t = path_length / (3e8);
-        Float w_delta = - (w_g / 3e8) * (path_length_at_t - path_length) / t;
+        Float temp = (2 * M_PI * m_illumination_modulation_frequency_mhz) / 300;
+        Float w_delta = - temp * (path_length_at_t - path_length) / (et - st);
+        Float phi = temp * path_length;
 
         Float a = (w_f - w_g - w_delta);
-        Float b = w_g * delta_t;
-        Float c = f_value_ratio_inc / t;
+        Float b = phi;
+        Float c = f_value_ratio_inc / (et - st);
 
         Float s1 = 0.5;
-        if(std::abs(a) < 1e-3){
-            Float BT = std::cos(b) * t;
-            Float B0 = 0;
+        if(std::abs(a) < 1){
+            Float BT = std::cos(b) * et;
+            Float B0 = std::cos(b) * st;
             if(!m_force_constant_attenuation){
-                BT += ( 0.5 * c * t * t * std::cos(b));
+                BT += ( 0.5 * c * et * et * std::cos(b));
+                B0 += ( 0.5 * c * st * st * std::cos(b));
             }
             return s1 / 2 * (BT - B0);
         } else {
-            Float AT = std::sin(a * t + b) / a;
-            Float A0 = std::sin(a * 0 + b) / a;
+            Float AT = std::sin(a * et + b) / a;
+            Float A0 = std::sin(a * st + b) / a;
 
             if(!m_force_constant_attenuation){
-                AT += ( c * t * std::sin(a * t + b) / a + c * std::cos(a * t + b) / (a * a));
-                A0 += ( c * 0 * std::sin(a * 0 + b) / a + c * std::cos(a * 0 + b) / (a * a));
+                AT += ( c * et * std::sin(a * et + b) / a + c * std::cos(a * et + b) / (a * a));
+                A0 += ( c * st * std::sin(a * st + b) / a + c * std::cos(a * st + b) / (a * a));
             }
             return s1 / 2 * (AT - A0);
         }
     }
 
-    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const {
+    Spectrum Li_from(const RayDifferential &r, RadianceQueryRecord &rRec, Float startTime, Float endTime) const {
         
         /* Some aliases and local variables */
         const Scene *scene = rRec.scene;
         Intersection &its = rRec.its;
         RayDifferential ray(r);
+        ray.setTime(startTime);
 
         Spectrum Li(0.0f);
         bool scattered = false;
@@ -181,9 +184,9 @@ public:
 
         Float path_length = 0;
         path_length += its.t;
-        
+
         Intersection its_T;// = its;
-        Ray ray_T = Ray(ray.o, ray.d, m_time);
+        Ray ray_T = Ray(ray.o, ray.d, endTime);
 
         Intersection prev_its;
         Intersection prev_its_T;
@@ -213,7 +216,7 @@ public:
             if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
                 && (!m_hideEmitters || scattered))
             {
-                Float dem_length_weight = evalIntegratedModulationWeight(m_time, path_length, path_length, 0);
+                Float dem_length_weight = evalIntegratedModulationWeight(startTime, endTime, path_length, path_length, 0);
                 Li += throughput * its.Le(-ray.d) * dem_length_weight;
             }
 
@@ -271,15 +274,16 @@ public:
                         Float dist_sqr_1 = dRec.dist * dRec.dist;
                         Float cos_i_1 = dot(its.shFrame.n, dRec.d);
                         Float cos_o_1 = emitter->isOnSurface()?dot(dRec.n, -dRec.d):1;
-                        Float f_1 = cos_i_1 * cos_o_1 / dist_sqr_1;
+                        Float f_1 = std::abs(cos_i_1) * std::abs(cos_o_1) / dist_sqr_1;
 
                         Float dist_sqr_2 = (em_p_at_T - its_T.p).lengthSquared();
                         Float cos_i_2 = dot(its_T.shFrame.n, normalize((em_p_at_T - its_T.p)));
                         Float cos_o_2 = emitter->isOnSurface()?dot(dRec.n, -normalize((em_p_at_T - its_T.p))):1;
-                        Float f_2 = cos_i_2 * cos_o_2 / dist_sqr_2;
+                        Float f_2 = std::abs(cos_i_2) * std::abs(cos_o_2) / dist_sqr_2;
 
                         Float f_value_ratio_em = f_value_ratio * f_2 / f_1;
-                        Float em_length_weight = evalIntegratedModulationWeight(m_time, em_path_length, em_path_length_at_T, f_value_ratio_em - 1);
+                        Float em_length_weight = evalIntegratedModulationWeight(startTime, endTime, em_path_length, em_path_length_at_T, f_value_ratio_em - 1);
+                        // return Spectrum(std::abs(cos_i_1));
 
                         Li += throughput * value * bsdfVal * weight * em_length_weight;
                     }
@@ -339,10 +343,10 @@ public:
             }
 
             its_T = its;
-            its_T.adjustTime(m_time);
+            its_T.adjustTime(endTime);
 
             path_length += its.t;
-            path_length_at_T += its_T.t;
+            path_length_at_T += (its_T.p - prev_its_T.p).length();
             
             /* Keep track of the throughput and relative
                refractive index along the path */
@@ -352,12 +356,12 @@ public:
             Float dist_sqr_1 = its.t * its.t;
             Float cos_i_1 = dot(prev_its.shFrame.n, ray.d);
             Float cos_o_1 = dot(its.shFrame.n, -ray.d);
-            Float f_1 = cos_i_1 * cos_o_1 / dist_sqr_1;
+            Float f_1 = std::abs(cos_i_1) * std::abs(cos_o_1) / dist_sqr_1;
 
             Float dist_sqr_2 = (its_T.p - prev_its_T.p).lengthSquared();
             Float cos_i_2 = dot(prev_its_T.shFrame.n, normalize((its_T.p - prev_its_T.p)));
             Float cos_o_2 = dot(its_T.shFrame.n, -normalize((its_T.p - prev_its_T.p)));
-            Float f_2 = cos_i_2 * cos_o_2 / dist_sqr_2;
+            Float f_2 = std::abs(cos_i_2) * std::abs(cos_o_2) / dist_sqr_2;
 
             f_value_ratio = f_value_ratio * f_2 / f_1;
 
@@ -372,7 +376,7 @@ public:
                 const Float lumPdf = (!(bRec.sampledType & BSDF::EDelta)) ?
                     scene->pdfEmitterDirect(dRec) : 0;
 
-                Float length_weight = evalIntegratedModulationWeight(m_time, path_length, path_length_at_T, f_value_ratio - 1);
+                Float length_weight = evalIntegratedModulationWeight(startTime, endTime, path_length, path_length_at_T, f_value_ratio - 1);
 
                 Li += throughput * value * miWeight(bsdfPdf, lumPdf) * length_weight;
             }
@@ -407,6 +411,94 @@ public:
         //Li = Spectrum(path_length_at_T - path_length);
 
         return Li;
+    }
+
+    bool check_consistency(Intersection& its1, Intersection& its2) const{
+        bool consistent = its1.isValid() && its2.isValid() && (its1.p - its2.p).length() < 0.1 && dot(its1.shFrame.n, its2.shFrame.n) > 0.9;
+        // bool consistent = (its1.shape == its2.shape);
+        
+        return consistent;
+    }
+
+    Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const {
+        // return Li_from(r, rRec, 0, m_time);
+        /* Some aliases and local variables */
+        const Scene *scene = rRec.scene;
+        Intersection its;
+        RayDifferential ray(r);
+
+        Spectrum Li(0.0f);
+        bool scattered = false;
+
+        /* Perform the first ray intersection (or ignore if the
+           intersection has already been provided). */
+        scene->rayIntersect(ray, its);
+        // rRec.rayIntersect(ray);
+        ray.mint = Epsilon;
+
+        Spectrum throughput(1.0f);
+        Float eta = 1.0f;
+
+
+        Intersection its_T;// = its;
+        Ray ray_T = Ray(ray.o, ray.d, m_time);
+
+        Intersection prev_its;
+        Intersection prev_its_T;
+        
+        scene->rayIntersect(ray_T, its_T);
+        ray_T.mint=Epsilon;
+        
+        //bool consistent = (its.p - its_T.p).length() < 0.1 && dot(its.shFrame.n, its_T.shFrame.n) > 0.9 && (its.primIndex == its_T.primIndex);
+        // printf("This is cosistent\n");
+        bool consistent = check_consistency(its, its_T);
+        // check consistency
+        if(!consistent)
+        // if(false)
+        {
+            Float start = 0;
+            Float end = m_time;
+            Float hit_time = 0.5f * (end + start);
+
+
+            for(int i=0; i < 10; i++){
+                hit_time = 0.5f * (end + start);
+                ray_T.setTime(hit_time);
+                ray_T.mint=Epsilon;
+
+                Intersection its_temp;
+                scene->rayIntersect(ray_T, its_temp);
+
+                //bool hit = length(its.p, its_T) < 0.1;//its_temp.shape == its.shape;//its.shape->rayIntersect(ray_T, ray_T.mint, ray_T.maxt);
+                
+                consistent = check_consistency(its, its_temp);
+                
+                if(fabsf(its.p.x - 0.5465)< 0.0001){
+                    //printf("its p : %f, %f, %f \n", its.p.x, its.p.y, its.p.z);
+                    //printf("its_temp p%d : %f, %f, %f \n", i, its_temp.p.x, its_temp.p.y, its_temp.p.z);
+                }
+                
+                if(consistent){
+                    start = hit_time;
+                } else {
+                    end = hit_time;
+                }
+            }
+            // printf("Hit time: %f, %f\n", start, end);
+
+            RadianceQueryRecord rRec2 = rRec;
+
+            Spectrum Li1 = Li_from(r, rRec, 0, start);
+            Spectrum Li2 = Li_from(r, rRec2,  end, m_time);
+
+            // return Li_from(r, rRec, 0, m_time);
+            
+            return Li1 + Li2;
+            
+        } else {
+            return Li_from(r, rRec, 0, m_time);
+        }
+        
     }
 
     inline Float miWeight(Float pdfA, Float pdfB) const {

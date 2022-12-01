@@ -38,6 +38,9 @@ Sensor::Sensor(const Properties &props)
         m_type |= EDeltaTime;
     
     // variables related to time sampling
+    m_useAntitheticSampling = props.getBoolean("useAntitheticSampling", false);
+    m_usePixelCorrelation = props.getBoolean("usePixelCorrelation", false);
+
     m_useSameTimeSamplesOverPathSpace = props.getBoolean("useSameTimeSamplesOverPathSpace", false);
     m_timeSampleCount = props.getInteger("timeSampleCount", 0);
     std::string timeSamplingType = props.getString("timeSamplingType", "regular");

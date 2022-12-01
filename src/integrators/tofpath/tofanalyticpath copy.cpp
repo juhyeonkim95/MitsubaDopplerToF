@@ -107,10 +107,12 @@ static StatsCounter avgPathLength("ToFPath tracer", "Average path length", EAver
  *    one of the photon mappers may be preferable.
  * }
  */
-class ToFPathTracer : public MonteCarloIntegrator {
+
+class ToFAnalyticPathTracer : public MonteCarloIntegrator {
 public:
-    ToFPathTracer(const Properties &props)
+    ToFAnalyticPathTracer(const Properties &props)
         : MonteCarloIntegrator(props) {
+        m_time = props.getFloat("time");
         m_illumination_modulation_frequency_mhz = props.getFloat("w_g", 30.0f);
         m_illumination_modulation_scale = props.getFloat("g_1", 0.5f);
         m_illumination_modulation_offset = props.getFloat("g_0", 0.5f);
@@ -126,30 +128,47 @@ public:
     }
 
     /// Unserialize from a binary data stream
-    ToFPathTracer(Stream *stream, InstanceManager *manager)
+    ToFAnalyticPathTracer(Stream *stream, InstanceManager *manager)
         : MonteCarloIntegrator(stream, manager) { }
 
-    Float evalModulationWeight(Float &ray_time, Float &path_length) const{
+    Float evalIntegratedModulationWeight(Float t, Float path_length, Float path_length_at_t, Float f_value_ratio_inc) const{
         Float w_g = 2 * M_PI * m_illumination_modulation_frequency_mhz * 1e6;
         Float w_f = 2 * M_PI * m_sensor_modulation_frequency_mhz * 1e6;
-        Float delta_t = path_length / (3e8);
-        Float phi = (2 * M_PI * m_illumination_modulation_frequency_mhz) / 300 * path_length;
+        Float temp = (2 * M_PI * m_illumination_modulation_frequency_mhz) / 300;
+        Float w_delta = - temp * (path_length_at_t - path_length) / t;
+        Float phi = temp * path_length;
 
-        if(m_low_frequency_component_only){
-            Float fg_t = 0.25 * std::cos((w_f - w_g) * ray_time + phi);
-            return fg_t;
-        } 
-        
-        Float g_t = 0.5 * std::cos(w_g * ray_time - phi) + 0.5;
-        Float f_t = std::cos(w_f * ray_time);
-        return f_t * g_t;
+        Float a = (w_f - w_g - w_delta);
+        Float b = phi;
+        Float c = f_value_ratio_inc / t;
+
+        Float s1 = 0.5;
+        if(std::abs(a) < 1){
+            Float BT = std::cos(b) * t;
+            Float B0 = 0;
+            if(!m_force_constant_attenuation){
+                BT += ( 0.5 * c * t * t * std::cos(b));
+            }
+            return s1 / 2 * (BT - B0);
+        } else {
+            Float AT = std::sin(a * t + b) / a;
+            Float A0 = std::sin(a * 0 + b) / a;
+
+            if(!m_force_constant_attenuation){
+                AT += ( c * t * std::sin(a * t + b) / a + c * std::cos(a * t + b) / (a * a));
+                A0 += ( c * 0 * std::sin(a * 0 + b) / a + c * std::cos(a * 0 + b) / (a * a));
+            }
+            return s1 / 2 * (AT - A0);
+        }
     }
 
     Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const {
+        
         /* Some aliases and local variables */
         const Scene *scene = rRec.scene;
         Intersection &its = rRec.its;
         RayDifferential ray(r);
+
         Spectrum Li(0.0f);
         bool scattered = false;
 
@@ -163,6 +182,21 @@ public:
 
         Float path_length = 0;
         path_length += its.t;
+        
+        Intersection its_T;// = its;
+        Ray ray_T = Ray(ray.o, ray.d, m_time);
+
+        Intersection prev_its;
+        Intersection prev_its_T;
+        
+        scene->rayIntersect(ray_T, its_T);
+        // Point p_at_T = its_T.p;
+        //if((p_at_T - its.p).length() > 1e-2){
+        //    p_at_T = its.p;
+        //}
+
+        Float path_length_at_T = its_T.t;
+        Float f_value_ratio = 1.0;
 
         while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
             if (!its.isValid()) {
@@ -180,8 +214,8 @@ public:
             if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
                 && (!m_hideEmitters || scattered))
             {
-                Float modulation_weight = evalModulationWeight(ray.time, path_length);
-                Li += modulation_weight * throughput * its.Le(-ray.d);
+                Float dem_length_weight = evalIntegratedModulationWeight(m_time, path_length, path_length, 0);
+                Li += throughput * its.Le(-ray.d) * dem_length_weight;
             }
 
             /* Include radiance from a subsurface scattering model if requested */
@@ -202,7 +236,7 @@ public:
             /* ==================================================================== */
             /*                     Direct illumination sampling                     */
             /* ==================================================================== */
-
+        
             /* Estimate the direct illumination if this is requested */
             DirectSamplingRecord dRec(its);
 
@@ -229,12 +263,26 @@ public:
 
                         /* Weight using the power heuristic */
                         Float weight = miWeight(dRec.pdf, bsdfPdf);
+                        
+                        Point em_p_at_T = dRec.p;
 
                         Float em_path_length = path_length + dRec.dist;
+                        Float em_path_length_at_T = path_length_at_T + (em_p_at_T - its_T.p).length();
 
-                        Float em_modulation_weight = evalModulationWeight(ray.time, em_path_length);
+                        Float dist_sqr_1 = dRec.dist * dRec.dist;
+                        Float cos_i_1 = dot(its.shFrame.n, dRec.d);
+                        Float cos_o_1 = emitter->isOnSurface()?dot(dRec.n, -dRec.d):1;
+                        Float f_1 = cos_i_1 * cos_o_1 / dist_sqr_1;
 
-                        Li += throughput * value * bsdfVal * weight * em_modulation_weight;
+                        Float dist_sqr_2 = (em_p_at_T - its_T.p).lengthSquared();
+                        Float cos_i_2 = dot(its_T.shFrame.n, normalize((em_p_at_T - its_T.p)));
+                        Float cos_o_2 = emitter->isOnSurface()?dot(dRec.n, -normalize((em_p_at_T - its_T.p))):1;
+                        Float f_2 = cos_i_2 * cos_o_2 / dist_sqr_2;
+
+                        Float f_value_ratio_em = f_value_ratio * f_2 / f_1;
+                        Float em_length_weight = evalIntegratedModulationWeight(m_time, em_path_length, em_path_length_at_T, f_value_ratio_em - 1);
+
+                        Li += throughput * value * bsdfVal * weight * em_length_weight;
                     }
                 }
             }
@@ -263,6 +311,10 @@ public:
 
             /* Trace a ray in this direction */
             ray = Ray(its.p, wo, ray.time);
+
+            prev_its = its;
+            prev_its_T = its_T;
+
             if (scene->rayIntersect(ray, its)) {
                 /* Intersected something - check if it was a luminaire */
                 if (its.isEmitter()) {
@@ -287,11 +339,30 @@ public:
                 }
             }
 
+            its_T = its;
+            its_T.adjustTime(m_time);
+
             path_length += its.t;
+            path_length_at_T += (its_T.p - prev_its_T.p).length();
+            
             /* Keep track of the throughput and relative
                refractive index along the path */
             throughput *= bsdfWeight;
             eta *= bRec.eta;
+
+            Float dist_sqr_1 = its.t * its.t;
+            Float cos_i_1 = dot(prev_its.shFrame.n, ray.d);
+            Float cos_o_1 = dot(its.shFrame.n, -ray.d);
+            Float f_1 = cos_i_1 * cos_o_1 / dist_sqr_1;
+
+            Float dist_sqr_2 = (its_T.p - prev_its_T.p).lengthSquared();
+            Float cos_i_2 = dot(prev_its_T.shFrame.n, normalize((its_T.p - prev_its_T.p)));
+            Float cos_o_2 = dot(its_T.shFrame.n, -normalize((its_T.p - prev_its_T.p)));
+            Float f_2 = cos_i_2 * cos_o_2 / dist_sqr_2;
+
+            f_value_ratio = f_value_ratio * f_2 / f_1;
+
+            //p_at_T = its_T.p;
 
             /* If a luminaire was hit, estimate the local illumination and
                weight using the power heuristic */
@@ -302,9 +373,9 @@ public:
                 const Float lumPdf = (!(bRec.sampledType & BSDF::EDelta)) ?
                     scene->pdfEmitterDirect(dRec) : 0;
 
-                Float modulation_weight = evalModulationWeight(ray.time, path_length);
-                
-                Li += throughput * value * miWeight(bsdfPdf, lumPdf) * modulation_weight;
+                Float length_weight = evalIntegratedModulationWeight(m_time, path_length, path_length_at_T, f_value_ratio - 1);
+
+                Li += throughput * value * miWeight(bsdfPdf, lumPdf) * length_weight;
             }
 
             /* ==================================================================== */
@@ -333,7 +404,8 @@ public:
         /* Store statistics */
         avgPathLength.incrementBase();
         avgPathLength += rRec.depth;
-        // Li = Spectrum(-1.0);
+        
+        //Li = Spectrum(path_length_at_T - path_length);
 
         return Li;
     }
@@ -350,7 +422,7 @@ public:
 
     std::string toString() const {
         std::ostringstream oss;
-        oss << "ToFPathTracer[" << endl
+        oss << "ToFAnalyticPathTracer[" << endl
             << "  maxDepth = " << m_maxDepth << "," << endl
             << "  rrDepth = " << m_rrDepth << "," << endl
             << "  strictNormals = " << m_strictNormals << endl
@@ -373,8 +445,10 @@ private:
     bool m_is_objects_transformed_for_time;
     bool m_force_constant_attenuation;
     bool m_correlate_time_samples;
+
+    Float m_time;
 };
 
-MTS_IMPLEMENT_CLASS_S(ToFPathTracer, false, MonteCarloIntegrator)
-MTS_EXPORT_PLUGIN(ToFPathTracer, "ToF path tracer");
+MTS_IMPLEMENT_CLASS_S(ToFAnalyticPathTracer, false, MonteCarloIntegrator)
+MTS_EXPORT_PLUGIN(ToFAnalyticPathTracer, "ToF analytic path tracer");
 MTS_NAMESPACE_END

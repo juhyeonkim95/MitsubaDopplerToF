@@ -49,3 +49,4 @@ mitsuba.*.log
 .cproject
 .project
 /scene*
+/final_project*

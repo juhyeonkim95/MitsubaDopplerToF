@@ -344,6 +344,12 @@ public:
      */
     inline const Sampler *getSampler() const { return m_sampler.get(); }
 
+    /// Return the m_useAntitheticSampling
+    inline bool useAntitheticSampling() const { return m_useAntitheticSampling; }
+
+    /// Return the m_useAntitheticSampling
+    inline bool usePixelCorrelation() const { return m_usePixelCorrelation; }
+
     /// Serialize this sensor to a binary data stream
     virtual void serialize(Stream *stream, InstanceManager *manager) const;
 
@@ -387,6 +393,10 @@ protected:
     ETimeSamplingType m_timeSamplingType;
     Float m_aspect;
     bool m_useSameTimeSamplesOverPathSpace;
+
+    // antithetic sampling
+    bool m_useAntitheticSampling;
+    bool m_usePixelCorrelation;
 };
 
 /**
