@@ -161,7 +161,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
     Float previousTimeSample = 0.0f;
     Point2 previousSamplePos;
-    Sampler* clonedSampler;
+    
 
     if (!sensor->getFilm()->hasAlpha()) /* Don't compute an alpha channel if we don't have to */
         queryType &= ~RadianceQueryRecord::EOpacity;
@@ -171,9 +171,9 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
         if (stop)
             break;
 
-        sampler->generate(offset);
+        rRec.sampler->generate(offset);
 
-        for (size_t j = 0; j<sampler->getSampleCount(); j++) {
+        for (size_t j = 0; j<rRec.sampler->getSampleCount(); j++) {
             rRec.newQuery(queryType, sensor->getMedium());
 
             // check using antithetic sampling
@@ -183,10 +183,10 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
                     if(timeSample > 1.0f){
                         timeSample -= 1.0f;
                     }
+                    // timeSample = 1.0f - previousTimeSample;
 
                     if(usePixelCorrelation){
-                        sampler = clonedSampler;
-                        rRec.sampler = clonedSampler;
+                        rRec.sampler->loadSavedState();
                     }
                 } else {
                     if(sensor->hasTimeSampler()){
@@ -195,7 +195,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
                         timeSample = rRec.nextSample1D();
                     }    
                     previousTimeSample = timeSample;
-                    clonedSampler = sampler->clone();
+                    rRec.sampler->saveState();
                 }
             } else {
                 if(sensor->hasTimeSampler()){
@@ -207,9 +207,9 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
             Point2 samplePos(Point2(offset) + Vector2(rRec.nextSample2D()));
 
-            if(useAntitheticSampling){
+            if(useAntitheticSampling && usePixelCorrelation){
                 if(j%2 == 1){
-                    printf("1: %f, %f 2: %f, %f\n", previousSamplePos.x, previousSamplePos.y, samplePos.x, samplePos.y);
+                    // printf("1: %f, %f 2: %f, %f\n", previousSamplePos.x, previousSamplePos.y, samplePos.x, samplePos.y);
                 }
                 else{
                     previousSamplePos = samplePos;
@@ -218,8 +218,6 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
             if (needsApertureSample)
                 apertureSample = rRec.nextSample2D();
-            //if (needsTimeSample)
-            //    timeSample = rRec.nextSample1D();
             
 
             Spectrum spec = sensor->sampleRayDifferential(
@@ -237,7 +235,13 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             Spectrum Li_offset(1.0f);
 
             block->put(samplePos, spec + Li_offset, rRec.alpha);
-            sampler->advance();
+            
+            rRec.sampler->advance();
+            if(useAntitheticSampling && usePixelCorrelation){
+                if(j%2 == 1){
+                    rRec.sampler->advance();
+                }
+            }
         }
     }
 }

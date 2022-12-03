@@ -592,14 +592,18 @@ public:
         RadianceQueryRecord rRec2 = rRec;
         RayDifferential r2 = RayDifferential(r);
 
-        if(m_antithetic_sampling_by_shift){
-            r2.time = r.time + 0.5f * m_time;
-            if(r2.time >= m_time){
-                r2.time -= m_time;
-            }
-        } else {
-            r2.time = m_time - r.time;
+        r2.time = r.time + 0.5f * m_time;
+        if(r2.time >= m_time){
+            r2.time -= m_time;
         }
+        
+        // if(m_illumination_modulation_frequency_mhz == m_sensor_modulation_frequency_mhz){
+        //     r2.time = m_time - r.time;
+        // } else {
+            
+        // }
+
+        r2.time = m_time - r.time;
 
         Spectrum Li1 = Li_first_path(r, rRec, path, neePath, neeValue);
         auto result = Li_second_path(r2, rRec2, path, neePath, neeValue);

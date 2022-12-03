@@ -56,11 +56,13 @@ public:
         /* Number of samples per pixel when used with a sampling-based integrator */
         m_sampleCount = props.getSize("sampleCount", 4);
         m_random = new Random();
+        m_random_backup = new Random();
     }
 
     IndependentSampler(Stream *stream, InstanceManager *manager)
      : Sampler(stream, manager) {
         m_random = static_cast<Random *>(manager->getInstance(stream));
+        m_random_backup = static_cast<Random *>(manager->getInstance(stream));
     }
 
     void serialize(Stream *stream, InstanceManager *manager) const {
@@ -72,11 +74,20 @@ public:
         ref<IndependentSampler> sampler = new IndependentSampler();
         sampler->m_sampleCount = m_sampleCount;
         sampler->m_random = new Random(m_random);
+        sampler->m_random_backup = new Random(m_random);
         for (size_t i=0; i<m_req1D.size(); ++i)
             sampler->request1DArray(m_req1D[i]);
         for (size_t i=0; i<m_req2D.size(); ++i)
             sampler->request2DArray(m_req2D[i]);
         return sampler.get();
+    }
+
+    void saveState(){
+        m_random_backup->set(m_random.get());
+    }
+
+    void loadSavedState(){
+        m_random->set(m_random_backup);
     }
 
     void generate(const Point2i &) {
@@ -113,6 +124,7 @@ public:
     MTS_DECLARE_CLASS()
 private:
     ref<Random> m_random;
+    Random *m_random_backup;
 };
 
 MTS_IMPLEMENT_CLASS_S(IndependentSampler, false, Sampler)

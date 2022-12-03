@@ -64,6 +64,18 @@ ref<Sampler> Sampler::clone() {
     return NULL;
 }
 
+void Sampler::saveState() {
+    Log(EError, "%s::saveState() is not implemented!",
+        getClass()->getName().c_str());
+    return;
+}
+
+void Sampler::loadSavedState() {
+    Log(EError, "%s::loadSavedState() is not implemented!",
+        getClass()->getName().c_str());
+    return;
+}
+
 void Sampler::setSampleIndex(size_t sampleIndex) {
     m_sampleIndex = sampleIndex;
     m_dimension1DArray = m_dimension2DArray = 0;

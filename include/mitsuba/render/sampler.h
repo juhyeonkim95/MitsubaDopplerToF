@@ -77,6 +77,18 @@ public:
     virtual ref<Sampler> clone();
 
     /**
+     * \brief Create a clone of this sampler
+     *
+     * The clone is allowed to be different to some extent, e.g. a pseudorandom
+     * generator should be based on a different random seed compared to the
+     * original. All other parameters, are copied exactly.
+     *
+     * The default implementation throws an exception.
+     */
+    virtual void saveState();
+    virtual void loadSavedState();
+
+    /**
      * \brief Set the film size in pixels
      *
      * When this sampler is used to render an image using a \c SampleIntegrator,
@@ -161,6 +173,9 @@ public:
     /// Serialize this sampler to a binary data stream
     virtual void serialize(Stream *stream, InstanceManager *manager) const;
 
+    /// Virtual destructor
+    virtual ~Sampler();
+
     MTS_DECLARE_CLASS()
 protected:
     /// Construct a new sampler
@@ -169,8 +184,6 @@ protected:
     /// Unserialize a sampler
     Sampler(Stream *stream, InstanceManager *manager);
 
-    /// Virtual destructor
-    virtual ~Sampler();
 protected:
     size_t m_sampleCount;
     size_t m_sampleIndex;
