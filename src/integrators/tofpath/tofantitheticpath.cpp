@@ -147,63 +147,55 @@ public:
         return f_t * g_t;
     }
 
-    Spectrum Li_first_path(const RayDifferential &r, RadianceQueryRecord &rRec, 
-        std::vector<Intersection> &path, 
-        std::vector<DirectSamplingRecord> &neePath,
-        std::vector<Spectrum> &neeValue) const {
-            
+    Spectrum Li_helper(const RayDifferential &r, RadianceQueryRecord &rRec, Float ray2_time) const {
         /* Some aliases and local variables */
         const Scene *scene = rRec.scene;
+        Spectrum Li(0.0f);
+        RadianceQueryRecord rRec2 = rRec;
+
+        // path 1
         Intersection &its = rRec.its;
         RayDifferential ray(r);
-        Spectrum Li(0.0f);
-        bool scattered = false;
-
-        /* Perform the first ray intersection (or ignore if the
-           intersection has already been provided). */
         rRec.rayIntersect(ray);
         ray.mint = Epsilon;
-
-        Spectrum throughput(1.0f);
-        Float eta = 1.0f;
-
         Float path_length = 0;
         path_length += its.t;
+        Float path_pdf = 1.0f;
+        Spectrum path_throughput(1.0f);
+        Float G = 1.0f;
+        
+        // path 2 (antithetic path)
+        bool path2_blocked = false;
+        Intersection &its2 = rRec2.its;
+        RayDifferential ray2(r);
+        ray2.time = ray2_time;
+        rRec2.rayIntersect(ray2);
+        ray2.mint = Epsilon;
+        Float path_length2 = 0;
+        path_length2 += its2.t;
+        Float path_pdf2 = 1.0f;
+        Spectrum path_throughput2(1.0f);
+        Float G2 = 1.0f;
 
-        path.push_back(Intersection(its));
+        // bool consistency = (dot(its2.shFrame.n, its.shFrame.n) > 0.9) && (std::abs(its2.t - its.t) < 0.1);
+        path2_blocked = (!its2.isValid());// || (!consistency);
         
         while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
             if (!its.isValid()) {
-                /* If no intersection could be found, potentially return
-                   radiance from a environment luminaire if it exists */
-                if ((rRec.type & RadianceQueryRecord::EEmittedRadiance)
-                    && (!m_hideEmitters || scattered))
-                    Li += throughput * scene->evalEnvironment(ray);
                 break;
             }
 
-            const BSDF *bsdf = its.getBSDF(ray);
-
-            /* Possibly include emitted radiance if requested */
-            if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
-                && (!m_hideEmitters || scattered))
-            {
-                Float modulation_weight = evalModulationWeight(ray.time, path_length);
-                Li += modulation_weight * throughput * its.Le(-ray.d);
+            if (path2_blocked) {
+                path_throughput2 *= 0.0f;
+                its2 = its; // dummy
             }
 
-            /* Include radiance from a subsurface scattering model if requested */
-            if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance))
-                Li += throughput * its.LoSub(scene, rRec.sampler, -ray.d, rRec.depth);
+            const BSDF *bsdf = its.getBSDF(ray);
+            const BSDF *bsdf2 = its2.getBSDF(ray2);
 
             if ((rRec.depth >= m_maxDepth && m_maxDepth > 0)
                 || (m_strictNormals && dot(ray.d, its.geoFrame.n)
                     * Frame::cosTheta(its.wi) >= 0)) {
-
-                /* Only continue if:
-                   1. The current path length is below the specifed maximum
-                   2. If 'strictNormals'=true, when the geometric and shading
-                      normals classify the incident direction to the same side */
                 break;
             }
 
@@ -213,15 +205,23 @@ public:
 
             /* Estimate the direct illumination if this is requested */
             DirectSamplingRecord dRec(its);
+            DirectSamplingRecord dRec2(its2);
+
+            Float neePathBSDFPdf = 0.0f;
+            Float neePathNEEPdf = 0.0f;
+            Spectrum neePathThroughput = Spectrum(0.0f);
+            Float neePathBSDFPdf2 = 0.0f;
+            Float neePathNEEPdf2 = 0.0f;
+            Spectrum neePathThroughput2 = Spectrum(0.0f);
 
             if (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance &&
                 (bsdf->getType() & BSDF::ESmooth)) {
                 Spectrum value = scene->sampleEmitterDirect(dRec, rRec.nextSample2D());
-                neeValue.push_back(value);
-                neePath.push_back(dRec);
-                if (!value.isZero()) {
-                    const Emitter *emitter = static_cast<const Emitter *>(dRec.object);
+                value *= dRec.pdf;
 
+                const Emitter *emitter = static_cast<const Emitter *>(dRec.object);
+
+                if (!value.isZero()) {
                     /* Allocate a record for querying the BSDF */
                     BSDFSamplingRecord bRec(its, its.toLocal(dRec.d), ERadiance);
 
@@ -237,18 +237,102 @@ public:
                         Float bsdfPdf = (emitter->isOnSurface() && dRec.measure == ESolidAngle)
                             ? bsdf->pdf(bRec) : 0;
 
-                        /* Weight using the power heuristic */
-                        Float weight = miWeight(dRec.pdf, bsdfPdf);
-
                         Float em_path_length = path_length + dRec.dist;
 
                         Float em_modulation_weight = evalModulationWeight(ray.time, em_path_length);
 
-                        Li += throughput * value * bsdfVal * weight * em_modulation_weight;
+                        if(emitter->isOnSurface()){
+                            Float G = std::abs(dot(dRec.d, dRec.n)) / (dRec.dist * dRec.dist);
+                            neePathNEEPdf = path_pdf * dRec.pdf * G;
+                            neePathBSDFPdf = path_pdf * bsdfPdf * G;
+                            neePathThroughput = path_throughput * bsdfVal * G *  value * em_modulation_weight;
+                        } else {
+                            neePathNEEPdf = dRec.pdf * path_pdf;
+                            neePathBSDFPdf = 0;
+                            neePathThroughput = path_throughput * bsdfVal * value * em_modulation_weight;
+                        }
                     }
+                }
+
+                if(!path2_blocked && ! value.isZero()){
+                    Spectrum value2 = value;
+                    dRec2.p = dRec.p;
+                    dRec2.n = dRec.n;
+                    dRec2.d = normalize(dRec2.p - its2.p);
+                    dRec2.dist = (dRec2.p - its2.p).length();
+                    dRec2.measure = dRec.measure;
+                    dRec2.object = dRec.object;
+                    dRec2.uv = dRec.uv;
+
+
+                    if(emitter->isOnSurface()){
+                        dRec2.pdf = dRec.pdf;
+                        if(dRec.pdf != 0){
+                            Float G = std::abs(dot(dRec.d, dRec.n)) / (dRec.dist * dRec.dist);
+                            Float G2 = std::abs(dot(dRec2.d, dRec2.n)) / (dRec2.dist * dRec2.dist);
+                            if(G2 > 0){
+                                dRec2.pdf = dRec.pdf * G / G2;
+                            }    
+                        }
+                    } else {
+                        dRec2.pdf = dRec.pdf;
+                        Float G = 1 / (dRec.dist * dRec.dist);
+                        Float G2 = 1 / (dRec2.dist * dRec2.dist);
+                        value2 = value / G * G2;
+                    }
+
+                    Ray shadowray = Ray(its2.p, dRec2.d, ray2.time);
+                    shadowray.maxt = dRec2.dist - 1e-2;
+                    shadowray.mint = Epsilon;
+                    Intersection its_temp;
+                    bool em_path2_blocked = scene->rayIntersect(shadowray, its_temp);
+
+                    /* Allocate a record for querying the BSDF */
+                    BSDFSamplingRecord bRec2(its2, its2.toLocal(dRec2.d), ERadiance);
+
+                    /* Evaluate BSDF * cos(theta) */
+                    const Spectrum bsdfVal2 = bsdf2->eval(bRec2);
+
+                    /* Prevent light leaks due to the use of shading normals */
+                    if (!em_path2_blocked && !bsdfVal2.isZero() && (!m_strictNormals
+                            || dot(its2.geoFrame.n, dRec2.d) * Frame::cosTheta(bRec2.wo) > 0)) {
+
+                        /* Calculate prob. of having generated that direction
+                        using BSDF sampling */
+                        Float bsdfPdf2 = (emitter->isOnSurface() && dRec2.measure == ESolidAngle)
+                            ? bsdf2->pdf(bRec2) : 0;
+
+                        Float em_path_length2 = path_length2 + dRec2.dist;
+
+                        Float em_modulation_weight2 = evalModulationWeight(ray2.time, em_path_length2);
+
+                        if(emitter->isOnSurface()){
+                            Float G2 = std::abs(dot(dRec2.d, dRec2.n)) / (dRec2.dist * dRec2.dist);
+                            neePathNEEPdf2 = path_pdf2 * dRec2.pdf * G2;
+                            neePathBSDFPdf2 = path_pdf2 * bsdfPdf2 * G2;
+                            neePathThroughput2 = path_throughput2 * bsdfVal2 * G2 *  value2 * em_modulation_weight2;
+                        } else {
+                            neePathNEEPdf2 = dRec2.pdf * path_pdf2;
+                            neePathBSDFPdf2 = 0;
+                            neePathThroughput2 = path_throughput2 * bsdfVal2 * value2 * em_modulation_weight2;
+                        }
+                    }
+                    
                 }
             }
 
+            if(neePathNEEPdf > 0){
+                Li += neePathThroughput / neePathNEEPdf * miWeight4(neePathNEEPdf, neePathBSDFPdf, neePathNEEPdf2, neePathBSDFPdf2);
+            }
+            if(neePathNEEPdf2 > 0){
+                Li += neePathThroughput2 / neePathNEEPdf2 * miWeight4(neePathNEEPdf2, neePathBSDFPdf2, neePathNEEPdf, neePathBSDFPdf);
+            }
+
+            if(rRec.depth + 1>=m_maxDepth){
+                break;
+            }
+
+            
             /* ==================================================================== */
             /*                            BSDF sampling                             */
             /* ==================================================================== */
@@ -257,10 +341,10 @@ public:
             Float bsdfPdf;
             BSDFSamplingRecord bRec(its, rRec.sampler, ERadiance);
             Spectrum bsdfWeight = bsdf->sample(bRec, bsdfPdf, rRec.nextSample2D());
+            Spectrum bsdfVal = bsdfWeight * bsdfPdf;
+
             if (bsdfWeight.isZero())
                 break;
-
-            scattered |= bRec.sampledType != BSDF::ENull;
 
             /* Prevent light leaks due to the use of shading normals */
             const Vector wo = its.toWorld(bRec.wo);
@@ -281,32 +365,20 @@ public:
                     hitEmitter = true;
                 }
             } else {
-                /* Intersected nothing -- perhaps there is an environment map? */
-                const Emitter *env = scene->getEnvironmentEmitter();
-
-                if (env) {
-                    if (m_hideEmitters && !scattered)
-                        break;
-
-                    value = env->evalEnvironment(ray);
-                    if (!env->fillDirectSamplingRecord(dRec, ray))
-                        break;
-                    hitEmitter = true;
-                } else {
-                    break;
-                }
+                break;
             }
 
-            path.push_back(Intersection(its));
-
+            G = std::abs(dot(its.shFrame.n, ray.d)) / (its.t * its.t);
             path_length += its.t;
-            /* Keep track of the throughput and relative
-               refractive index along the path */
-            throughput *= bsdfWeight;
-            eta *= bRec.eta;
 
-            /* If a luminaire was hit, estimate the local illumination and
-               weight using the power heuristic */
+            Float pathBSDFPdf = 0.0f;
+            Float pathNEEPdf = 0.0f;
+            Spectrum pathThroughput = Spectrum(0.0f);
+            Float pathBSDFPdf2 = 0.0f;
+            Float pathNEEPdf2 = 0.0f;
+            Spectrum pathThroughput2 = Spectrum(0.0f);
+
+
             if (hitEmitter &&
                 (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance)) {
                 /* Compute the prob. of generating that direction using the
@@ -315,8 +387,89 @@ public:
                     scene->pdfEmitterDirect(dRec) : 0;
 
                 Float modulation_weight = evalModulationWeight(ray.time, path_length);
-                
-                Li += throughput * value * miWeight(bsdfPdf, lumPdf) * modulation_weight;
+
+                if(!(bRec.sampledType & BSDF::EDelta)){
+                    pathNEEPdf = path_pdf * lumPdf * G;
+                    pathBSDFPdf = path_pdf * bsdfPdf * G;
+                    pathThroughput=path_throughput * bsdfVal * value * G * modulation_weight;
+                } else {
+                    pathNEEPdf=0;
+                    pathBSDFPdf=path_pdf;
+                    pathThroughput=path_throughput * bsdfVal * value * modulation_weight;
+                }
+            }
+
+            if(!(bRec.sampledType & BSDF::EDelta)){
+                path_pdf *= bsdfPdf * G;
+                path_throughput *= bsdfVal * G;
+            } else {
+                path_pdf *= bsdfPdf;
+                path_throughput *= bsdfVal;
+            }
+
+            if(!path2_blocked){
+                Intersection next_its = its;
+                next_its.adjustTime(ray2.time);
+                next_its.t = (next_its.p - its2.p).length();
+                const Vector wo2 = normalize(next_its.p - its2.p);
+
+                ray2 = Ray(its2.p, wo2, ray2.time);
+                ray2.maxt = next_its.t - 1e-2;
+                ray2.mint = Epsilon;
+                Intersection its_temp;
+                path2_blocked |= scene->rayIntersect(ray2, its_temp);
+
+                if(!path2_blocked){
+                    BSDFSamplingRecord bRec2(its2, its2.toLocal(wo2), ERadiance);
+                    Spectrum bsdfVal2 = bsdf2->eval(bRec2);
+                    Float bsdfPdf2 = bsdf2->pdf(bRec2);
+
+                    its2 = next_its;
+                    
+                    Spectrum value2;
+                    if (its2.isEmitter()) {
+                        value2 = its2.Le(-ray2.d);
+                        dRec2.setQuery(ray2, its2);
+                    }
+
+                    G2 = std::abs(dot(its2.shFrame.n, ray2.d)) / (its2.t * its2.t);
+                    path_length2 += its2.t;
+
+                    /* If a luminaire was hit, estimate the local illumination and
+                    weight using the power heuristic */
+                    if (hitEmitter &&
+                        (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance)) {
+                        const Float lumPdf2 = (!(bRec2.sampledType & BSDF::EDelta)) ?
+                            scene->pdfEmitterDirect(dRec2) : 0;
+
+                        Float modulation_weight2 = evalModulationWeight(ray2.time, path_length2);
+
+                        if(!(bRec2.sampledType & BSDF::EDelta)){
+                            pathNEEPdf2 = path_pdf2 * lumPdf2 * G2;
+                            pathBSDFPdf2 = path_pdf2 * bsdfPdf2 * G2;
+                            pathThroughput2 = path_throughput2 * bsdfVal2 * value2 * G2 * modulation_weight2;
+                        } else {
+                            pathNEEPdf2=0;
+                            pathBSDFPdf2=path_pdf2;
+                            pathThroughput2=path_throughput2 * bsdfVal2 * value2 * modulation_weight2;
+                        }
+                    }
+
+                    if(!(bRec2.sampledType & BSDF::EDelta)){
+                        path_pdf2 *= bsdfPdf2 * G2;
+                        path_throughput2 *= bsdfVal2 * G2;
+                    } else {
+                        path_pdf2 *= bsdfPdf2;
+                        path_throughput2 *= bsdfVal2;
+                    }
+                }
+            }
+            
+            if(pathBSDFPdf > 0){
+                Li += pathThroughput / pathBSDFPdf * miWeight4(pathBSDFPdf, pathNEEPdf, pathBSDFPdf2, pathNEEPdf2);
+            }
+            if(pathBSDFPdf2 > 0){
+                Li += pathThroughput2 / pathBSDFPdf2 * miWeight4(pathBSDFPdf2, pathNEEPdf2, pathBSDFPdf, pathNEEPdf);
             }
 
             /* ==================================================================== */
@@ -328,297 +481,40 @@ public:
             if (!its.isValid() || !(rRec.type & RadianceQueryRecord::EIndirectSurfaceRadiance))
                 break;
             rRec.type = RadianceQueryRecord::ERadianceNoEmission;
-
-            if (rRec.depth++ >= m_rrDepth) {
-                /* Russian roulette: try to keep path weights equal to one,
-                   while accounting for the solid angle compression at refractive
-                   index boundaries. Stop with at least some probability to avoid
-                   getting stuck (e.g. due to total internal reflection) */
-
-                Float q = std::min(throughput.max() * eta * eta, (Float) 0.95f);
-                if (rRec.nextSample1D() >= q)
-                    break;
-                throughput /= q;
-            }
+            rRec.depth++;
         }
-
-        /* Store statistics */
-        avgPathLength.incrementBase();
-        avgPathLength += rRec.depth;
-        // Li = Spectrum(-1.0);
 
         return Li;
     }
 
-    std::pair<bool, Spectrum> Li_second_path(const RayDifferential &r, RadianceQueryRecord &rRec, 
-        const std::vector<Intersection> path, 
-        const std::vector<DirectSamplingRecord> neePath,
-        const std::vector<Spectrum> neeValue) const {
-
-        /* Some aliases and local variables */
-        const Scene *scene = rRec.scene;
-        Intersection &its = rRec.its;
-        RayDifferential ray(r);
-        Spectrum Li(0.0f);
-        bool scattered = false;
-
-        /* Perform the first ray intersection (or ignore if the
-           intersection has already been provided). */
-        rRec.rayIntersect(ray);
-        ray.mint = Epsilon;
-
-        Spectrum throughput(1.0f);
-        Float eta = 1.0f;
-
-        Float path_length = 0;
-        path_length += its.t;
-
-        if(!path.at(0).isValid()){
-            return std::make_pair(false, Li);
-        }
-
-        //printf("Path size %d\n", path.size());
-
-        //return std::make_pair(false, Li);
-
-        while (rRec.depth <= path.size() || m_maxDepth < 0) {
-            if (!its.isValid()) {
-                /* If no intersection could be found, potentially return
-                   radiance from a environment luminaire if it exists */
-                if ((rRec.type & RadianceQueryRecord::EEmittedRadiance)
-                    && (!m_hideEmitters || scattered))
-                    Li += throughput * scene->evalEnvironment(ray);
-                break;
-            }
-
-            const BSDF *bsdf = its.getBSDF(ray);
-
-            /* Possibly include emitted radiance if requested */
-            if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
-                && (!m_hideEmitters || scattered))
-            {
-                Float modulation_weight = evalModulationWeight(ray.time, path_length);
-                Li += modulation_weight * throughput * its.Le(-ray.d);
-            }
-
-            /* Include radiance from a subsurface scattering model if requested */
-            if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance))
-                Li += throughput * its.LoSub(scene, rRec.sampler, -ray.d, rRec.depth);
-
-            if ((rRec.depth >= m_maxDepth && m_maxDepth > 0)
-                || (m_strictNormals && dot(ray.d, its.geoFrame.n)
-                    * Frame::cosTheta(its.wi) >= 0)) {
-
-                /* Only continue if:
-                   1. The current path length is below the specifed maximum
-                   2. If 'strictNormals'=true, when the geometric and shading
-                      normals classify the incident direction to the same side */
-                break;
-            }
-
-            // return std::make_pair(true, Li);
-
-            /* ==================================================================== */
-            /*                     Direct illumination sampling                     */
-            /* ==================================================================== */
-
-            /* Estimate the direct illumination if this is requested */
-            if(neePath.size() < rRec.depth){
-                break;
-            }
-            //DirectSamplingRecord dRec = neePath.at(rRec.depth - 1);//(its);
-            //dRec.d = normalize(dRec.p - its.p);
-            //Float dRecdistSquared = (dRec.p - its.p).lengthSquared();
-            // printf("ADDED!!\n");
-            DirectSamplingRecord dRec(its);
-
-            if (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance &&
-                (bsdf->getType() & BSDF::ESmooth)) {
-                // Spectrum value = scene->sampleEmitterDirect(dRec, rRec.nextSample2D());
-                Spectrum value = scene->sampleEmitterDirect(dRec, rRec.nextSample2D());
-                
-                if (!value.isZero()) {
-                    const Emitter *emitter = static_cast<const Emitter *>(dRec.object);
-
-                    /* Allocate a record for querying the BSDF */
-                    BSDFSamplingRecord bRec(its, its.toLocal(dRec.d), ERadiance);
-
-                    /* Evaluate BSDF * cos(theta) */
-                    const Spectrum bsdfVal = bsdf->eval(bRec);
-
-                    /* Prevent light leaks due to the use of shading normals */
-                    if (!bsdfVal.isZero() && (!m_strictNormals
-                            || dot(its.geoFrame.n, dRec.d) * Frame::cosTheta(bRec.wo) > 0)) {
-
-                        /* Calculate prob. of having generated that direction
-                           using BSDF sampling */
-                        Float bsdfPdf = (emitter->isOnSurface() && dRec.measure == ESolidAngle)
-                            ? bsdf->pdf(bRec) : 0;
-
-                        /* Weight using the power heuristic */
-                        Float weight = miWeight(dRec.pdf, bsdfPdf);
-
-                        Float em_path_length = path_length + dRec.dist;//(dRec.p - its.p).length();
-
-                        Float em_modulation_weight = evalModulationWeight(ray.time, em_path_length);
-                        
-                        Li += throughput * value * bsdfVal * weight * em_modulation_weight;
-                    }
-                }
-            }
-
-            // return std::make_pair(true, Li);
-
-            /* ==================================================================== */
-            /*                            BSDF sampling                             */
-            /* ==================================================================== */
-            if(rRec.depth >= path.size()){
-                break;
-            }
-            Intersection next_its = path.at(rRec.depth);
-            
-            if(!next_its.isValid()){
-                return std::make_pair(false, Li);
-            }
-            next_its.adjustTime(ray.time);
-
-            const Vector wo = normalize(next_its.p - its.p);
-            Float ray_length = (next_its.p - its.p).length();
-
-            /* Allocate a record for querying the BSDF */
-            BSDFSamplingRecord bRec(its, its.toLocal(wo), ERadiance);
-
-            /* Evaluate BSDF * cos(theta) */
-            Spectrum bsdfVal = bsdf->eval(bRec);
-            Float bsdfPdf = bsdf->pdf(bRec);
-            Spectrum bsdfWeight = bsdfVal / bsdfPdf * next_its.t * next_its.t / (ray_length * ray_length);
-            
-            /* Sample BSDF * cos(theta) */
-            // Float bsdfPdf;
-            // BSDFSamplingRecord bRec(its, rRec.sampler, ERadiance);
-            // Spectrum bsdfWeight = bsdf->sample(bRec, bsdfPdf, rRec.nextSample2D());
-            // if (bsdfWeight.isZero())
-            //     break;
-
-            // /* Sample BSDF * cos(theta) */
-            // Float bsdfPdf;
-            // BSDFSamplingRecord bRec(its, rRec.sampler, ERadiance);
-            // Spectrum bsdfWeight = bsdf->sample(bRec, bsdfPdf, rRec.nextSample2D());
-            // if (bsdfWeight.isZero())
-            //     break;
-
-            // scattered |= bRec.sampledType != BSDF::ENull;
-
-            // /* Prevent light leaks due to the use of shading normals */
-            // const Vector wo = its.toWorld(bRec.wo);
-            // Float woDotGeoN = dot(its.geoFrame.n, wo);
-            // if (m_strictNormals && woDotGeoN * Frame::cosTheta(bRec.wo) <= 0)
-            //     break;
-
-            bool hitEmitter = false;
-            Spectrum value;
-
-            /* Trace a ray in this direction */
-            ray = Ray(its.p, wo, ray.time);
-            // ray.maxt = ray_length - 1e-2;
-            // ray.mint = Epsilon;
-            // if(scene->rayIntersect(ray, its)){
-            //     return std::make_pair(false, Li);
-            // }
-
-            its = next_its;
-
-            if (its.isEmitter()) {
-                value = its.Le(-ray.d);
-                dRec.setQuery(ray, its);
-                hitEmitter = true;
-            }
-
-            path_length += ray_length;
-            /* Keep track of the throughput and relative
-               refractive index along the path */
-            throughput *= bsdfWeight;//bsdfVal / bsdfPdf;
-            eta *= bRec.eta;
-
-            /* If a luminaire was hit, estimate the local illumination and
-               weight using the power heuristic */
-            if (hitEmitter &&
-                (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance)) {
-                /* Compute the prob. of generating that direction using the
-                   implemented direct illumination sampling technique */
-                const Float lumPdf = scene->pdfEmitterDirect(dRec);
-
-                Float modulation_weight = evalModulationWeight(ray.time, path_length);
-                
-                Li += throughput * value * miWeight(bsdfPdf, lumPdf) * modulation_weight;
-            }
-
-            /* ==================================================================== */
-            /*                         Indirect illumination                        */
-            /* ==================================================================== */
-
-            /* Set the recursive query type. Stop if no surface was hit by the
-               BSDF sample or if indirect illumination was not requested */
-            if (!its.isValid() || !(rRec.type & RadianceQueryRecord::EIndirectSurfaceRadiance))
-                break;
-            rRec.type = RadianceQueryRecord::ERadianceNoEmission;
-
-            if (rRec.depth++ >= m_rrDepth) {
-                /* Russian roulette: try to keep path weights equal to one,
-                   while accounting for the solid angle compression at refractive
-                   index boundaries. Stop with at least some probability to avoid
-                   getting stuck (e.g. due to total internal reflection) */
-
-                Float q = std::min(throughput.max() * eta * eta, (Float) 0.95f);
-                if (rRec.nextSample1D() >= q)
-                    break;
-                throughput /= q;
-            }
-        }
-
-        /* Store statistics */
-        avgPathLength.incrementBase();
-        avgPathLength += rRec.depth;
-        // Li = Spectrum(-1.0);
-        
-        return std::make_pair(true, Li);
-    }
-
     Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const
     {
-        std::vector<Intersection> path;
-        std::vector<DirectSamplingRecord> neePath;
-        std::vector<Spectrum> neeValue;
-        RadianceQueryRecord rRec2 = rRec;
-        RayDifferential r2 = RayDifferential(r);
-
-        r2.time = r.time + 0.5f * m_time;
-        if(r2.time >= m_time){
-            r2.time -= m_time;
+        Float ray2_time = r.time + 0.5f * m_time;
+        if(ray2_time >= m_time){
+            ray2_time -= m_time;
+        }
+        if(!m_antithetic_sampling_by_shift){
+            ray2_time = m_time - r.time;
         }
         
-        // if(m_illumination_modulation_frequency_mhz == m_sensor_modulation_frequency_mhz){
-        //     r2.time = m_time - r.time;
-        // } else {
-            
-        // }
-
-        r2.time = m_time - r.time;
-
-        Spectrum Li1 = Li_first_path(r, rRec, path, neePath, neeValue);
-        auto result = Li_second_path(r2, rRec2, path, neePath, neeValue);
-        if(result.first){
-            Li1 += result.second;
-            Li1 *= 0.5f;
-        }
-
-        return Li1;
+        return Li_helper(r, rRec, ray2_time);
     }
 
     inline Float miWeight(Float pdfA, Float pdfB) const {
         pdfA *= pdfA;
         pdfB *= pdfB;
         return pdfA / (pdfA + pdfB);
+    }
+
+    inline Float miWeight4(Float pdfA, Float pdfB, Float pdfC, Float pdfD) const {
+        //pdfA *= pdfA;
+        //pdfB *= pdfB;
+        //pdfC *= pdfC;
+        //pdfD *= pdfD;
+
+        // printf("%f, %f, %f, %f\n", pdfA, pdfB, pdfC, pdfD);
+
+        return pdfA / (pdfA + pdfB + pdfC + pdfD);
     }
 
     void serialize(Stream *stream, InstanceManager *manager) const {

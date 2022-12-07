@@ -158,7 +158,9 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
     bool useAntitheticSampling = sensor->useAntitheticSampling();
     bool usePixelCorrelation = sensor->usePixelCorrelation();
-
+    bool useSamplerCorrelation = sensor->useSamplerCorrelation();
+    bool isAntitheticSamplingByShift = sensor->isAntitheticSamplingByShift();
+    
     Float previousTimeSample = 0.0f;
     Point2 previousSamplePos;
     
@@ -179,13 +181,15 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             // check using antithetic sampling
             if(useAntitheticSampling){
                 if(j%2 == 1){
-                    timeSample = 0.5f + previousTimeSample;
-                    if(timeSample > 1.0f){
-                        timeSample -= 1.0f;
+                    if(isAntitheticSamplingByShift){
+                        timeSample = 0.5f + previousTimeSample;
+                        if(timeSample > 1.0f){
+                            timeSample -= 1.0f;
+                        }
+                    } else {
+                        timeSample = 1.0f - previousTimeSample;
                     }
-                    // timeSample = 1.0f - previousTimeSample;
-
-                    if(usePixelCorrelation){
+                    if(useSamplerCorrelation){
                         rRec.sampler->loadSavedState();
                     }
                 } else {
@@ -195,7 +199,9 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
                         timeSample = rRec.nextSample1D();
                     }    
                     previousTimeSample = timeSample;
-                    rRec.sampler->saveState();
+                    if(useSamplerCorrelation){
+                        rRec.sampler->saveState();
+                    }
                 }
             } else {
                 if(sensor->hasTimeSampler()){
@@ -206,15 +212,20 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             }
 
             Point2 samplePos(Point2(offset) + Vector2(rRec.nextSample2D()));
-
-            if(useAntitheticSampling && usePixelCorrelation){
-                if(j%2 == 1){
-                    // printf("1: %f, %f 2: %f, %f\n", previousSamplePos.x, previousSamplePos.y, samplePos.x, samplePos.y);
-                }
-                else{
-                    previousSamplePos = samplePos;
-                }
+            if(useAntitheticSampling && j%2 == 1 && usePixelCorrelation){
+                samplePos = previousSamplePos;
             }
+
+            previousSamplePos = samplePos;
+
+            // if(useAntitheticSampling && usePixelCorrelation){
+            //     if(j%2 == 1){
+            //         // printf("1: %f, %f 2: %f, %f\n", previousSamplePos.x, previousSamplePos.y, samplePos.x, samplePos.y);
+            //     }
+            //     else{
+            //         previousSamplePos = samplePos;
+            //     }
+            // }
 
             if (needsApertureSample)
                 apertureSample = rRec.nextSample2D();
@@ -234,7 +245,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             spec /= timePDF;
             Spectrum Li_offset(1.0f);
 
-            block->put(samplePos, spec + Li_offset, rRec.alpha);
+            block->put(samplePos, Li_offset + spec, rRec.alpha);
             
             rRec.sampler->advance();
             if(useAntitheticSampling && usePixelCorrelation){

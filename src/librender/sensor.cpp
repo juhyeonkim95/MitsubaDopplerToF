@@ -40,6 +40,8 @@ Sensor::Sensor(const Properties &props)
     // variables related to time sampling
     m_useAntitheticSampling = props.getBoolean("useAntitheticSampling", false);
     m_usePixelCorrelation = props.getBoolean("usePixelCorrelation", false);
+    m_useSamplerCorrelation = props.getBoolean("useSamplerCorrelation", false);
+    m_antitheticSamplingByShift = props.getBoolean("antitheticSamplingByShift", true);
 
     m_useSameTimeSamplesOverPathSpace = props.getBoolean("useSameTimeSamplesOverPathSpace", false);
     m_timeSampleCount = props.getInteger("timeSampleCount", 0);

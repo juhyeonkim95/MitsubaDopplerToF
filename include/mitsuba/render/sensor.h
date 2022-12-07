@@ -350,6 +350,12 @@ public:
     /// Return the m_useAntitheticSampling
     inline bool usePixelCorrelation() const { return m_usePixelCorrelation; }
 
+    /// Return the m_useAntitheticSampling
+    inline bool useSamplerCorrelation() const { return m_useSamplerCorrelation; }
+
+    /// Return the m_useAntitheticSampling
+    inline bool isAntitheticSamplingByShift() const { return m_antitheticSamplingByShift; }
+
     /// Serialize this sensor to a binary data stream
     virtual void serialize(Stream *stream, InstanceManager *manager) const;
 
@@ -397,6 +403,8 @@ protected:
     // antithetic sampling
     bool m_useAntitheticSampling;
     bool m_usePixelCorrelation;
+    bool m_useSamplerCorrelation;
+    bool m_antitheticSamplingByShift;
 };
 
 /**
