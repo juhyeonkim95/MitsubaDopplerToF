@@ -198,6 +198,8 @@ void Shape::serialize(Stream *stream, InstanceManager *manager) const {
 Float Shape::getSurfaceArea() const { NotImplementedError("getSurfaceArea"); }
 bool Shape::rayIntersect(const Ray &ray, Float mint,
         Float maxt, Float &t, void *temp) const { NotImplementedError("rayIntersect"); }
+bool Shape::rayIntersectForced(const Ray &ray, Float mint,
+        Float maxt, Float &t, void *temp) const { NotImplementedError("rayIntersect"); }
 bool Shape::rayIntersect(const Ray &ray, Float mint,
         Float maxt) const { NotImplementedError("rayIntersect"); }
 

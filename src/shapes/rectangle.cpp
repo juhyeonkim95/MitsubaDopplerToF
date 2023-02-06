@@ -147,6 +147,31 @@ public:
         return false;
     }
 
+    inline bool rayIntersectForced(const Ray &_ray, Float mint, Float maxt, Float &t, void *temp) const {
+        Ray ray;
+        m_worldToObject.transformAffine(_ray, ray);
+        Float hit = -ray.o.z / ray.d.z;
+
+        // printf("Ray Ori(%.3f, %.3f, %.3f), New(%.3f, %.3f, %.3f)\n",
+        // ray.o.x,ray.o.y, ray.o.z,
+        // _ray.o.x,_ray.o.y,_ray.o.z
+        // );
+
+        Point local = ray(hit);
+        t = hit;
+
+        if (temp) {
+            Float *data = static_cast<Float *>(temp);
+            data[0] = local.x;
+            data[1] = local.y;
+        }
+        
+        if (std::abs(local.x) <= 1 && std::abs(local.y) <= 1) {
+            return true;
+        }
+        return false;
+    }
+
     bool rayIntersect(const Ray &ray, Float mint, Float maxt) const {
         Float t;
         return Rectangle::rayIntersect(ray, mint, maxt, t, NULL);
@@ -155,6 +180,7 @@ public:
     void fillIntersectionRecord(const Ray &ray,
             const void *temp, Intersection &its) const {
         const Float *data = static_cast<const Float *>(temp);
+        // std::cout << m_frame.toString() << std::endl;
         its.geoFrame = m_frame;
         its.shFrame = its.geoFrame.n;
         its.shape = this;

@@ -452,6 +452,10 @@ public:
         const Point p2 = vertexPositions0[idx2] * (1-alpha) + vertexPositions1[idx2] * alpha;
 
         its.p = p0 * b.x + p1 * b.y + p2 * b.z;
+        its.barycentric = b;
+        its.p0 = p0;
+        its.p1 = p1;
+        its.p2 = p2;
 
         Vector side1(p1-p0), side2(p2-p0);
         Normal faceNormal(cross(side1, side2));

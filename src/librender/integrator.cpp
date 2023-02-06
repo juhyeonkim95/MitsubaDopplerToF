@@ -243,9 +243,13 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
                 timePDF = sensor->pdfTime(sensorRay, ELength);
             }
             spec /= timePDF;
-            Spectrum Li_offset(1.0f);
 
-            block->put(samplePos, Li_offset + spec, rRec.alpha);
+            if(this->m_needOffset){
+                Spectrum Li_offset(1.0f);
+                block->put(samplePos, Li_offset + spec, rRec.alpha);
+            } else {
+                block->put(samplePos, spec, rRec.alpha);
+            }
             
             rRec.sampler->advance();
             if(useAntitheticSampling && usePixelCorrelation){

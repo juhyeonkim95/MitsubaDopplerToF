@@ -144,6 +144,70 @@ struct MTS_EXPORT_CORE Triangle {
         return false;
     }
 
+
+    /** \brief Ray-triangle intersection test
+     *
+     * Uses the algorithm by Moeller and Trumbore discussed at
+     * <tt>http://www.acm.org/jgt/papers/MollerTrumbore97/code.html</tt>.
+     *
+     * \param p0
+     *    Position of the first vertex
+     * \param p1
+     *    Position of the second vertex
+     * \param p2
+     *    Position of the third vertex
+     * \param ray
+     *    The ray segment to be used for the intersection query
+     * \param t
+     *    Upon success, \a t contains the distance from the ray origin to the
+     *    intersection point,
+     * \param u
+     *   Upon success, \c u will contain the 'U' component of the intersection
+     *   in barycentric coordinates
+     * \param v
+     *   Upon success, \c v will contain the 'V' component of the intersection
+     *   in barycentric coordinates
+     * \return
+     *   \c true if an intersection has been detected
+     */
+    FINLINE static bool rayIntersectForced(const Point &p0, const Point &p1, const Point &p2,
+        const Ray &ray, Float &u, Float &v, Float &t) {
+        /* Find vectors for two edges sharing */
+        Vector edge1 = p1 - p0, edge2 = p2 - p0;
+
+        /* Begin calculating determinant - also used to calculate U parameter */
+        Vector pvec = cross(ray.d, edge2);
+
+        Float det = dot(edge1, pvec);
+        if (det == 0)
+            return false;
+        Float inv_det = 1.0f / det;
+
+        /* Calculate distance from v[0] to ray origin */
+        Vector tvec = ray.o - p0;
+
+        /* Calculate U parameter and test bounds */
+        u = dot(tvec, pvec) * inv_det;
+        //if (u < 0.0 || u > 1.0)
+        //    return false;
+
+        /* Prepare to test V parameter */
+        Vector qvec = cross(tvec, edge1);
+
+        /* Calculate V parameter and test bounds */
+        v = dot(ray.d, qvec) * inv_det;
+
+        t = dot(edge2, qvec) * inv_det;
+
+        /* Inverted comparison (to catch NaNs) */
+        if (v >= 0.0 && u + v <= 1.0) {
+            /* ray intersects triangle -> compute t */
+            return true;
+        }
+
+        return false;
+    }
+
     /** \brief Ray-triangle intersection test
      *
      * Uses the algorithm by Moeller and Trumbore discussed at

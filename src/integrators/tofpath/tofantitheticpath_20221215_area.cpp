@@ -18,7 +18,6 @@
 
 #include <mitsuba/render/scene.h>
 #include <mitsuba/core/statistics.h>
-#include "../../shapes/instance.h"
 
 MTS_NAMESPACE_BEGIN
 
@@ -112,7 +111,6 @@ class ToFAntitheticPathTracer : public MonteCarloIntegrator {
 public:
     ToFAntitheticPathTracer(const Properties &props)
         : MonteCarloIntegrator(props) {
-        m_needOffset = true;
         m_time = props.getFloat("time");
         m_illumination_modulation_frequency_mhz = props.getFloat("w_g", 30.0f);
         m_illumination_modulation_scale = props.getFloat("g_1", 0.5f);
@@ -127,7 +125,6 @@ public:
         m_is_objects_transformed_for_time = props.getBoolean("is_object_transformed_for_time", false);
         m_force_constant_attenuation = props.getBoolean("force_constant_attenuation", false);
         m_antithetic_sampling_by_shift = props.getBoolean("antitheticSamplingByShift", true);
-        m_preserve_primal_mis_weight_to_one = props.getBoolean("preservePrimalMISWeightToOne", true);
 
         m_antithetic_sampling_mode = props.getString("antitheticSamplingMode", "position");
     }
@@ -152,11 +149,6 @@ public:
         return f_t * g_t;
     }
 
-    bool check_consistency(Intersection& its1, Intersection& its2) const{
-        bool consistent = its1.isValid() && its2.isValid() && (its1.p - its2.p).length() < 0.1 && dot(its1.shFrame.n, its2.shFrame.n) > 0.9;
-        return consistent;
-    }
-
     Spectrum Li_helper(const RayDifferential &r, RadianceQueryRecord &rRec, Float ray2_time) const {
         /* Some aliases and local variables */
         const Scene *scene = rRec.scene;
@@ -173,7 +165,7 @@ public:
         Float path_pdf = 1.0f;
         Spectrum path_throughput(1.0f);
         Float G = 1.0f;
-
+        
         // path 2 (antithetic path)
         bool path2_blocked = false;
         Intersection &its2 = rRec2.its;
@@ -233,9 +225,7 @@ public:
                 Spectrum value = scene->sampleEmitterDirect(dRec, rRec.nextSample2D());
                 value *= dRec.pdf;
 
-                ///////////////////////
                 // path 1
-                ///////////////////////
                 const Emitter *emitter = static_cast<const Emitter *>(dRec.object);
                 if (!value.isZero()) {
                     /* Allocate a record for querying the BSDF */
@@ -273,11 +263,7 @@ public:
                     }
                 }
 
-                ///////////////////////
                 // path 2
-                // (Sampler Correlation = Position Correlation)
-                ///////////////////////
-
                 if(!path2_blocked && ! value.isZero()){
                     Spectrum value2 = value;
                     dRec2.p = dRec.p;
@@ -342,22 +328,25 @@ public:
                     }
                 }
             }
-
-            // MIS for NEE 
+            
             if(neePathNEEPdf > 0.0){
                 Float p1 = path_pdf_1_as_1 * neePathNEEPdf;
                 Float p2 = path_pdf_1_as_1 * neePathBSDFPdf;
                 Float p3 = path_pdf_1_as_2 * neePathNEEPdf2;
-                Float p4 = path_pdf_1_as_2 * neePathBSDFPdf2;
+                Float p4 = path_pdf_1_as_2 * neePathNEEPdf2;
+
                 Li += neePathThroughput / p1 * miWeight4(p1, p2, p3, p4);
             }
             if(neePathNEEPdf > 0.0){
                 Float p1 = path_pdf_2_as_2 * neePathNEEPdf;
                 Float p2 = path_pdf_2_as_2 * neePathBSDFPdf;
                 Float p3 = path_pdf_2_as_1 * neePathNEEPdf2;
-                Float p4 = path_pdf_2_as_1 * neePathBSDFPdf2;
+                Float p4 = path_pdf_2_as_1 * neePathNEEPdf2;
+
                 Li += neePathThroughput2 / p1 * miWeight4(p1, p2, p3, p4);
             }
+
+            // break;
 
             if(rRec.depth + 1>=m_maxDepth){
                 break;
@@ -366,9 +355,8 @@ public:
             /*                            BSDF sampling                             */
             /* ==================================================================== */
 
-            // Strategy choosing heuristics
             Float roughness = bsdf->getRoughness(its, 0);
-            roughness = std::min(roughness, 20.0);
+            roughness = std::min(roughness, 2.0);
             Float reflected_dist = -1.0f;
             Vector3 reflected_dir = reflect(-ray.d, its.shFrame.n);
             Ray ray_mirror = Ray(its.p, reflected_dir, ray.time);
@@ -382,36 +370,15 @@ public:
                 reflected_cos_o = 1.0f;
             }
 
-            Float bsdfPdf;
-            Spectrum bsdfVal = Spectrum(0.0f);
-            Float bsdfPdf2 = 0.0f;
-            Spectrum bsdfVal2 = Spectrum(0.0f);
-            Float lumPdf = 0.0;
-            Float lumPdf2 = 0.0;
-            Float modulation_weight = 0.0;
-            Float modulation_weight2 = 0.0;
-            Float path_pdf_1_as_1_nee = 0.0;
-            Float path_pdf_1_as_2_nee = 0.0;
-            Float path_pdf_2_as_1_nee = 0.0;
-            Float path_pdf_2_as_2_nee = 0.0;
-            Float path_pdf_1_as_1_bsdf = 0.0;
-            Float path_pdf_1_as_2_bsdf = 0.0;
-            Float path_pdf_2_as_1_bsdf = 0.0;
-            Float path_pdf_2_as_2_bsdf = 0.0;
-            bool hitEmitter = false;
-            Spectrum value = Spectrum(0.0f);
-            bool hitEmitter2 = false;
-            Spectrum value2 = Spectrum(0.0f);
             
-            ////////////////////////////////////
             // path 1
-            ////////////////////////////////////
-
             /* Sample BSDF * cos(theta) */
+            Float bsdfPdf;
             BSDFSamplingRecord bRec(its, rRec.sampler, ERadiance);
+            // rRec.sampler->saveState();
             Point2 usedSample = rRec.nextSample2D();
             Spectrum bsdfWeight = bsdf->sample(bRec, bsdfPdf, usedSample);
-            bsdfVal = bsdfWeight * bsdfPdf;
+            Spectrum bsdfVal = bsdfWeight * bsdfPdf;
 
             if (bsdfWeight.isZero())
                 break;
@@ -422,383 +389,33 @@ public:
             if (m_strictNormals && woDotGeoN * Frame::cosTheta(bRec.wo) <= 0)
                 break;
 
+            bool hitEmitter = false;
+            Spectrum value;
+
             /* Trace a ray in this direction */
             ray = Ray(its.p, wo, ray.time);
             if (scene->rayIntersect(ray, its)) {
-                /* Intersected something - check if it was a luminaire */
-                if (its.isEmitter()) {
-                    value = its.Le(-ray.d);
-                    dRec.setQuery(ray, its);
-                    hitEmitter = true;
-                }
             } else {
                 break;
             }
-
-            //if(!(bRec.sampledType & BSDF::EDelta)){
-                G = std::abs(dot(its.shFrame.n, ray.d)) / (its.t * its.t);
-            //} else {
-            //    G = 1.0;
-            //}
+            G = std::abs(dot(its.shFrame.n, ray.d)) / (its.t * its.t);
             path_length += its.t;
 
-
-            if (hitEmitter &&
-                (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance)) {
-                /* Compute the prob. of generating that direction using the
-                   implemented direct illumination sampling technique */
-                lumPdf = (!(bRec.sampledType & BSDF::EDelta)) ? scene->pdfEmitterDirect(dRec) : 0;
-                modulation_weight = evalModulationWeight(ray.time, path_length);
-            }
-
-            path_pdf_1_as_1_nee = path_pdf_1_as_1 * lumPdf * G;
-            path_pdf_1_as_1_bsdf = path_pdf_1_as_1 * bsdfPdf * G; 
-
-
-            ////////////////////////////////////
             // path 2
-            ////////////////////////////////////
+            Spectrum bsdfVal2 = Spectrum(0.0f);
+            Float bsdfPdf2 = 0.0f;
+            Vector wo2;
 
-            //bool force_position = (strcmp(m_antithetic_sampling_mode.c_str(), "position") == 0);
-            //bool force_direction = (strcmp(m_antithetic_sampling_mode.c_str(), "direction") == 0);
-            bool useMixing = (strcmp(m_antithetic_sampling_mode.c_str(), "mixed2") == 0);
-            
-            if(!path2_blocked && useMixing){
-                // Mixed position
+            if(!path2_blocked){
                 
-                // (1) Positional Correlation
-                Intersection next_its_p = its;
-                next_its_p.adjustTime(ray2.time);
-                next_its_p.t = (next_its_p.p - its2.p).length();
-
-                // (2) Directional Correlation
-                Intersection next_its_d;
-                BSDFSamplingRecord bRec2_d(its2, rRec2.sampler, ERadiance);
-                Spectrum bsdfWeight_d = bsdf2->sample(bRec2_d, bsdfPdf2, usedSample);
-                const Vector wo2_d = its2.toWorld(bRec2_d.wo);
-                Ray ray2_d = Ray(its2.p, wo2_d, ray2.time);
-
-                std::string shape_name = typeid(*its.shape).name();
-                // std::cout <<  "NAME!!!"<< typeid(*its.shape).name() << std::endl;
-                
-                Float temp[2];
-                Float t_temp;
-                Float t_area;
-                // next_its_p.shape->adjustTime(ray2.time);
-                if(next_its_p.instance){
-                    const Instance *instance = reinterpret_cast<const Instance*>(next_its_p.instance);
-                    Ray ray_temp;
-                    const Transform &trafo = instance->getAnimatedTransform()->eval(ray2.time);
-                    trafo.inverse()(ray2_d, ray_temp);
-
-                    //std::cout << "TRAFO" << trafo.toString() << std::endl;
-                    
-                    //Point p0 = (trafo1.inverse()(its.p0));
-                    //Point p1 = (trafo1.inverse()(its.p1));
-                    //Point p2 = (trafo1.inverse()(its.p2));
-
-                    
-                    if (shape_name.find("Rectangle") != std::string::npos){
-                        next_its_p.shape->rayIntersectForced(ray_temp, ray_temp.mint, ray_temp.maxt, t_temp, temp);
-                        next_its_d.p = trafo(ray_temp(t_temp));
-                        t_area = 1.0;
-                    } else {
-                        Triangle::rayIntersectForced(its.p0, its.p1, its.p2, ray_temp, temp[0], temp[1], t_temp);
-                        next_its_d.p = trafo(ray_temp(t_temp));
-                        const Transform &trafo1 = instance->getAnimatedTransform()->eval(ray.time);
-                        Point p0 = trafo1(its.p0);
-                        Point p1 = trafo1(its.p1);
-                        Point p2 = trafo1(its.p2);
-                        Vector e1 = p1 - p0;
-                        Vector e2 = p2 - p0;
-                        t_area = cross(e1, e2).length();
-                    }
-                    
-                    //trafo.inverse()(_ray, ray);
-                } else {
-                    next_its_p.shape->rayIntersect(ray2_d, ray2_d.mint, ray2_d.maxt, t_temp, temp);
-                    next_its_d.p = ray2_d(t_temp);
-                }
-
-
-                
-                
-                Intersection next_its_d_temp;
-                ray2_d = Ray(its2.p, wo2_d, ray2.time);
-                scene->rayIntersect(ray2_d, next_its_d_temp);
-                if(next_its_d_temp.isValid()){
-                    if((next_its_d.p - next_its_d_temp.p).length() > 0.1){
-                        // printf("ours, (%.3f, %.3f, %.3f), (%.3f, %.3f, %.3f), (%.3f, %.3f)\n", 
-                        // next_its_d.p.x, next_its_d.p.y, next_its_d.p.z,
-                        // next_its_d_temp.p.x, next_its_d_temp.p.y, next_its_d_temp.p.z,
-                        // next_its_d.uv[0], next_its_d.uv[1]
-                        // );
-
-                        // printf("Distance T: %f, %f \n", t_temp, next_its_d_temp.t);
-
-
-                        // std::cout << next_its_d.p.toString() << next_its_d_temp.p.toString() << std::endl;
-                    }
-                }
-
-                //Point p_temp = its2.p + next_its_d_temp.t * wo2_d;
-                
-                //std::cout << "ITS" << its.shFrame.toString() << std::endl;
-
-                // if(next_its_d_temp.isValid()){
-                //     printf("ours, (%.3f, %.3f, %.3f), (%.3f, %.3f, %.3f), (%.3f, %.3f)\n", 
-                //     next_its_d.p.x, next_its_d.p.y, next_its_d.p.z,
-                //     next_its_d_temp.p.x, next_its_d_temp.p.y, next_its_d_temp.p.z,
-                //     next_its_d.uv[0], next_its_d.uv[1]
-                //     );
-                //     //std::cout << next_its_d_temp.p.toString() << p_temp.toString()<< std::endl;
-                //     printf("Distance T: %f, %f \n", t_temp, next_its_d_temp.t);
-                // }
-                //->rayIntersectForced(ray2_d, ray2_d.mint, ray2_d.maxt, t_temp, temp);
-                
-                // next_its_d.p = ray2_d(t_temp);//its2.p + wo2_d * t_temp;
-
-                next_its_d.t = t_temp;
-                next_its_d.uv = Point2(0.5f * (temp[0]+1), 0.5f * (temp[1]+1));
-                next_its_d.barycentric = Vector(1 - temp[0] - temp[1], temp[0], temp[1]);
-
-                //Float next_ids_d_k = dot(its2.p - next_its_p.p, next_its_p.shFrame.n) / dot(its.p - its2.p, next_its_p.shFrame.n);
-                //next_its_d.p = its2.p + (its.p - its2.p);
-
-                //printf("ours2, %f, %f, %f\n", next_its_d.p.x, next_its_d.p.y, next_its_d.p.z);
-                //printf("uv, %f, %f\n", next_its_d.uv[0], next_its_d.uv[1]);
-                // Check discontinuity
-                // path2_blocked |= !next_its_d.isValid();//(!check_consistency(its, next_its_d)); 
-                // if(!next_its_d.isValid()){
-                //     printf("Coords, (%.3f, %.3f, %.3f)\n", its2.p.x, its2.p.y, its2.p.z);
-                //     printf("Coords, (%.3f, %.3f, %.3f)\n", next_its_d.p.x, next_its_d.p.y, next_its_d.p.z);
-                //     printf("UV Coords, (%.3f, %.3f)\n", next_its_d.uv.x, next_its_d.uv.y);
-                // }    
-
-                Float G2_d;
-                //if(!(bRec2_d.sampledType & BSDF::EDelta)){
-                if(!path2_blocked){
-                    G2_d = std::abs(dot(next_its_d.shFrame.n, ray2_d.d)) / (next_its_d.t * next_its_d.t);
-                } else {
-                    G2_d = 1.0;
-                }
-
-                // (3) Mixed
-                Intersection next_its_m = next_its_p;
-
-                
-                Float jacobian_m = 1.0;
-                Float weight_p = 0.0;
-                // Float m_k = (1 / (roughness + 1e-5) * 0.8 + 1);
-
                 Float area = roughness * reflected_dist * reflected_dist / (reflected_cos_o);
-                // Float position_correlation_probability = 6.0f * area;
-                // position_correlation_probability = std::min(position_correlation_probability, 1.0);
 
-                // m_k large --> more directional
-                Float m_k = 1;//(t_area / (area + 1e-5) * 0.8 + 1);
-
-                // Rectangle
-                if (shape_name.find("Rectangle") != std::string::npos){
-                    Float m_x_1 = its.uv[0];
-                    Float m_x_2 = 1 - its.uv[0];
-                    Float m_x_3 = its.uv[1];
-                    Float m_x_4 = 1 - its.uv[1];
-                    Float m_x;
-                    Vector2 m_direction;
-                    if((m_x_1 <= m_x_2) && (m_x_1 <= m_x_3) && (m_x_1 <= m_x_4)){
-                        m_x = m_x_1;
-                        m_direction = Vector2(1.0, 0.0);
-                    }
-                    else if((m_x_2 <= m_x_1) && (m_x_2 <= m_x_3) && (m_x_2 <= m_x_4)){
-                        m_x = m_x_2;
-                        m_direction = Vector2(-1.0, 0.0);
-                    }
-                    else if((m_x_3 <= m_x_1) && (m_x_3 <= m_x_2) && (m_x_3 <= m_x_4)){
-                        m_x = m_x_3;
-                        m_direction = Vector2(0.0, 1.0);
-                    }
-                    else if((m_x_4 <= m_x_1) && (m_x_4 <= m_x_2) && (m_x_4 <= m_x_3)){
-                        m_x = m_x_4;
-                        m_direction = Vector2(0.0, -1.0);
-                    }
-                    //m_x = m_x_1;
-                    //m_direction = Vector2(1.0, 0.0);
-                    
-                    m_x = 1 - 2 * m_x;
-                    m_x = std::abs(m_x);
-
-                    //m_x = its.p[2];
-
-                    weight_p = std::pow(m_x, m_k);
-                    Float weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-
-                    Float jacobian_p_sqrt = 1;
-                    Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d));
-                    
-                    Float jacobian_m_1 = weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
-                    Float jacobian_m_2 = weight_p_prime * (-2) * dot(m_direction, next_its_p.uv - next_its_d.uv) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
-                    //Float jacobian_m = weight_p_prime * (next_its_p.p[2] - next_its_d.p[2]) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
-                    jacobian_m = jacobian_m_1 * jacobian_m_2;
-                    // jacobian_m = std::abs(G / G2_d);//std::abs(jacobian_m);
-
-                    Float m_u = next_its_p.uv[0] * weight_p + next_its_d.uv[0] * (1-weight_p);
-                    Float m_v = next_its_p.uv[1] * weight_p + next_its_d.uv[1] * (1-weight_p);
-                    // // printf("m_v, m_u, %f, %f\n", m_v, m_u);
-
-                    if((m_u > 1) || (m_u < 0) || (m_v > 1) || (m_v < 0)){
-                        path2_blocked = true;
-                    }
-                } 
-                
-                // Triangle
-                else {
-
-                    Float m_x_1 = its.barycentric[0];
-                    Float m_x_2 = its.barycentric[1];
-                    Float m_x_3 = its.barycentric[2];
-                    Float m_x;
-                    Vector m_direction;
-                    Float weight_p_prime;
-                    if((m_x_1 <= m_x_2) && (m_x_1 <= m_x_3)){
-                        m_x = m_x_1;
-                        m_direction = Vector(1.0, 0.0, 0.0);
-                        m_x = 1 - 3 * m_x;
-                        m_x = std::abs(m_x);
-                        weight_p = std::pow(m_x, m_k);
-                        weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-
-                        //weight_p = 0;
-                        //weight_p_prime = 0;
-                    }
-                    else if((m_x_2 <= m_x_1) && (m_x_2 <= m_x_3)){
-                        m_x = m_x_2;
-                        m_direction = Vector(0.0, 1.0, 0.0);
-                        m_x = 1 - 3 * m_x;
-                        m_x = std::abs(m_x);
-                        weight_p = std::pow(m_x, m_k);
-                        weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-
-                        //weight_p = 0;
-                        //weight_p_prime = 0;
-                        
-                    }
-                    else if((m_x_3 <= m_x_1) && (m_x_3 <= m_x_2)){
-                        m_x = m_x_3;
-                        m_direction = Vector(0.0, 0.0, 1.0);
-                        m_x = 1 - 3 * m_x;
-                        m_x = std::abs(m_x);
-                        weight_p = std::pow(m_x, m_k);
-                        weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-                        //weight_p = 0;
-                        //weight_p_prime = 0;
-                        
-                        // weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-                        // weight_p = 0;//std::pow(m_x, m_k);
-                        // weight_p_prime = 0;//m_k * std::pow(m_x, m_k - 1);
-                    }
-
-                    //weight_p = 0;//std::pow(m_x, m_k);
-                    //weight_p_prime = 0;
-
-                    Float jacobian_p_sqrt = 1;
-                    Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d));
-                    
-                    Float jacobian_m_1 = weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
-                    Float jacobian_m_2 = weight_p_prime * (-3) * dot(m_direction, next_its_p.barycentric - next_its_d.barycentric) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
-                    jacobian_m = jacobian_m_1 * jacobian_m_2;
-
-                    m_x_1 = next_its_p.barycentric[0] * weight_p + next_its_d.barycentric[0] * (1-weight_p);
-                    m_x_2 = next_its_p.barycentric[1] * weight_p + next_its_d.barycentric[1] * (1-weight_p);
-                    m_x_3 = next_its_p.barycentric[2] * weight_p + next_its_d.barycentric[2] * (1-weight_p);
-
-                    // if(next_its_d_temp.isValid()){
-                    //     // path2_blocked = true;
-                    //     m_k *= 2;
-                    // }
-                    
-                    //if((m_x_1 > 1) || (m_x_1 < 0) || (m_x_2 > 1) || (m_x_2 < 0) || (m_x_3 < 0) || (m_x_3 > 1)){
-                    //    path2_blocked = true;
-                    //}
-                }
-
-                // rectangle
-                
-                // Triangle
-                // Point p0 = its.p0;
-                // Point p1 = its.p1;
-                // Point p2 = its.p2;
-
-                // Point p0 = its.p0;
-                // Point p1 = its.p1;
-                // Point p2 = its.p2;
-                
-                // Point pg = (p0 + p1 + p2) / 3.0;
-                // Triangle::rayIntersect(p0, p1, pg);
-                if(!path2_blocked){
-                    if(!(bRec2_d.sampledType & BSDF::EDelta)){
-                        next_its_m.p = weight_p * next_its_p.p + (1 - weight_p) * next_its_d.p;
-                        next_its_m.t = (next_its_m.p - its2.p).length();
-                        
-                        const Vector wo2_m = normalize(next_its_m.p - its2.p);
-                        ray2 = Ray(its2.p, wo2_m, ray2.time);
-
-                        Intersection next_its_m_temp;
-                        scene->rayIntersect(ray2, next_its_m_temp);
-                        if(next_its_m_temp.isValid()){
-                            BSDFSamplingRecord bRec2_m(its2, its2.toLocal(wo2_m), ERadiance);
-                            bsdfVal2 = bsdf2->eval(bRec2_m);
-                            bsdfPdf2 = bsdf2->pdf(bRec2_m);    
-                        } else {
-                            path2_blocked = true;
-                        }
-                        next_its_m = next_its_m_temp;
-
-                    } else {
-                        next_its_m = next_its_d;
-                        const Vector wo2_m = normalize(next_its_m.p - its2.p);
-                        ray2 = Ray(its2.p, wo2_m, ray2.time);
-                        bsdfVal2 = bsdfWeight_d;
-                        bsdfPdf2 = 1.0;
-                    }
-                    G2 = std::abs(dot(next_its_m.shFrame.n, ray2.d)) / (next_its_m.t * next_its_m.t);
-
-                    path_length2 += next_its_m.t;
-
-                    its2 = next_its_m;
-                } else {
-                    G2 = 1.0;
-                }
-                
-                
-                // path_pdf_1_as_1_nee = path_pdf_1_as_1 * lumPdf * G;
-                path_pdf_1_as_2_nee = path_pdf_1_as_2 * lumPdf2 * G2 * jacobian_m;
-
-                path_pdf_2_as_1_nee = path_pdf_2_as_1 * lumPdf2 * G2;
-                path_pdf_2_as_2_nee = path_pdf_2_as_2 * lumPdf * G / jacobian_m;
-
-                // path_pdf_1_as_1 = path_pdf_1_as_1 * bsdfPdf * G; 
-                path_pdf_1_as_2_bsdf = path_pdf_1_as_2 * bsdfPdf2 * G2 * jacobian_m;
-                
-                path_pdf_2_as_1_bsdf = path_pdf_2_as_1 * bsdfPdf2 * G2;
-                path_pdf_2_as_2_bsdf = path_pdf_2_as_2 * bsdfPdf * G / jacobian_m;
-            }
-
-
-            ////////////////////////////////////
-            // path 2
-            ////////////////////////////////////
-            
-            if(!path2_blocked && !useMixing){
-                /////////////////////////////////////////////////////////
-                // (0) Calculate correlation strategy probability
-                /////////////////////////////////////////////////////////
-                Float area = roughness * reflected_dist * reflected_dist / (reflected_cos_o);
                 Float position_correlation_probability = 6.0f * area;
                 position_correlation_probability = std::min(position_correlation_probability, 1.0);
 
                 bool force_position = (strcmp(m_antithetic_sampling_mode.c_str(), "position") == 0);
                 bool force_direction = (strcmp(m_antithetic_sampling_mode.c_str(), "direction") == 0);
+
 
                 if(force_direction){
                     position_correlation_probability = 0;
@@ -806,20 +423,14 @@ public:
                     position_correlation_probability = 1;
                 }
 
-                ////////////////////////////////////
-                // (1) Position Correlation
-                ////////////////////////////////////
-
                 if(rRec.nextSample1D() < position_correlation_probability){
                     Intersection next_its = its;
                     next_its.adjustTime(ray2.time);
                     next_its.t = (next_its.p - its2.p).length();
-                    const Vector wo2 = normalize(next_its.p - its2.p);
+                    wo2 = normalize(next_its.p - its2.p);
                     ray2 = Ray(its2.p, wo2, ray2.time);
                     ray2.maxt = next_its.t - 1e-2;
                     ray2.mint = Epsilon;
-
-                    // Check discontinuity
                     Intersection its_temp;
                     path2_blocked |= scene->rayIntersect(ray2, its_temp);
 
@@ -828,44 +439,16 @@ public:
                         bsdfVal2 = bsdf2->eval(bRec2);
                         bsdfPdf2 = bsdf2->pdf(bRec2);
                         its2 = next_its;
-                        if(!(bRec2.sampledType & BSDF::EDelta)){
-                            G2 = std::abs(dot(its2.shFrame.n, ray2.d)) / (its2.t * its2.t);
-                        } else {
-                            G2 = 1.0;
-                        }
+                        G2 = std::abs(dot(its2.shFrame.n, ray2.d)) / (its2.t * its2.t);
                         path_length2 += its2.t;
-
-                        if (its2.isEmitter()) {
-                            value2 = its2.Le(-ray2.d);
-                            dRec2.setQuery(ray2, its2);
-                            hitEmitter2 = true;
-                        }
-
-                        /* If a luminaire was hit, estimate the local illumination and
-                        weight using the power heuristic */
-                        if (hitEmitter2) {
-                            lumPdf2 = (!(bRec2.sampledType & BSDF::EDelta)) ? scene->pdfEmitterDirect(dRec2) : 0;
-                            modulation_weight2 = evalModulationWeight(ray2.time, path_length2);
-                        }
                     }
-
-                    // path_pdf_1_as_1_nee = path_pdf_1_as_1 * lumPdf * G;
-                    path_pdf_1_as_2_nee = path_pdf_1_as_2 * lumPdf2 * G2;
-
-                    path_pdf_2_as_1_nee = path_pdf_2_as_1 * lumPdf2 * G2;
-                    path_pdf_2_as_2_nee = path_pdf_2_as_2 * lumPdf * G;
-
-                    // path_pdf_1_as_1 = path_pdf_1_as_1 * bsdfPdf * G; 
-                    path_pdf_1_as_2_bsdf = path_pdf_1_as_2 * bsdfPdf2 * G2;
                     
-                    path_pdf_2_as_1_bsdf = path_pdf_2_as_1 * bsdfPdf2 * G2;
-                    path_pdf_2_as_2_bsdf = path_pdf_2_as_2 * bsdfPdf * G;
-                }
-
-                ////////////////////////////////////
-                // (2) Sampler Correlation
-                ////////////////////////////////////
-                else {
+                    path_pdf_1_as_1 *= bsdfPdf * G; 
+                    path_pdf_1_as_2 *= bsdfPdf2 * G2;
+                    
+                    path_pdf_2_as_1 *= bsdfPdf2 * G2;
+                    path_pdf_2_as_2 *= bsdfPdf * G;
+                } else {
                     BSDFSamplingRecord bRec2(its2, rRec2.sampler, ERadiance);
                     Spectrum bsdfWeight2 = bsdf2->sample(bRec2, bsdfPdf2, usedSample);
                     bsdfVal2 = bsdfWeight2 * bsdfPdf2;
@@ -873,77 +456,39 @@ public:
                     ray2 = Ray(its2.p, wo2, ray2.time);
                     scene->rayIntersect(ray2, its2);
 
-                    // Check discontinuity
-                    path2_blocked |= (!check_consistency(its, its2)); 
-                    
+                    path2_blocked |= (!its2.isValid());
+                
                     if(!path2_blocked){
+                        //BSDFSamplingRecord bRec3(its3, its3.toLocal(wo3), ERadiance);
+                        //bsdfVal3 = bsdf3->eval(bRec3);
+                        //bsdfPdf3 = bsdf3->pdf(bRec3);
+                        path_length2 += its2.t;
+
                         if(!(bRec2.sampledType & BSDF::EDelta)){
                             G2 = std::abs(dot(its2.shFrame.n, ray2.d)) / (its2.t * its2.t);
                         } else {
                             G2 = 1.0f;
-                        }
-                        path_length2 += its2.t;
-
-                        if (its2.isEmitter()) {
-                            value2 = its2.Le(-ray2.d);
-                            dRec2.setQuery(ray2, its2);
-                            hitEmitter2 = true;
-                        }
-
-                        /* If a luminaire was hit, estimate the local illumination and
-                        weight using the power heuristic */
-                        if (hitEmitter2) {
-                            lumPdf2 = (!(bRec2.sampledType & BSDF::EDelta)) ? scene->pdfEmitterDirect(dRec2) : 0;
-                            modulation_weight2 = evalModulationWeight(ray2.time, path_length2);
                         }
                     } else {
                         bsdfVal2 *= 0.0f;
                         bsdfPdf2 *= 0.0f;
                     }
 
-                    // path_pdf_1_as_1_nee = path_pdf_1_as_1 * lumPdf * G;
-                    path_pdf_1_as_2_nee = path_pdf_1_as_2 * lumPdf2 * G;
-
-                    path_pdf_2_as_1_nee = path_pdf_2_as_1 * lumPdf2 * G2;
-                    path_pdf_2_as_2_nee = path_pdf_2_as_2 * lumPdf * G2;
-
-                    // path_pdf_1_as_1 = path_pdf_1_as_1 * bsdfPdf * G; 
-                    path_pdf_1_as_2_bsdf = path_pdf_1_as_2 * bsdfPdf2 * G;
+                    path_pdf_1_as_1 *= bsdfPdf * G; 
+                    path_pdf_1_as_2 *= bsdfPdf2 * G;
                     
-                    path_pdf_2_as_1_bsdf = path_pdf_2_as_1 * bsdfPdf2 * G2;
-                    path_pdf_2_as_2_bsdf = path_pdf_2_as_2 * bsdfPdf * G2;
+                    path_pdf_2_as_1 *= bsdfPdf2 * G2;
+                    path_pdf_2_as_2 *= bsdfPdf * G2;
                 }
             }
-
+        
             path_throughput *= bsdfVal * G;
             path_throughput2 *= bsdfVal2 * G2;
-
-            // MIS for BSDF 
-            if(hitEmitter){
-                Float p1 = path_pdf_1_as_1_bsdf;
-                Float p2 = path_pdf_1_as_2_bsdf;
-                Float p3 = path_pdf_1_as_1_nee;
-                Float p4 = path_pdf_1_as_2_nee;
-                Li += path_throughput * value * modulation_weight / p1 * miWeight4(p1, p2, p3, p4);
-            }
-            if(hitEmitter2){
-                Float p1 = path_pdf_2_as_2_bsdf;
-                Float p2 = path_pdf_2_as_1_bsdf;
-                Float p3 = path_pdf_2_as_2_nee;
-                Float p4 = path_pdf_2_as_1_nee;
-                Li += path_throughput2 * value2 * modulation_weight2 / p1 * miWeight4(p1, p2, p3, p4);
-            }
-
-            path_pdf_1_as_1 = path_pdf_1_as_1_bsdf;
-            path_pdf_1_as_2 = path_pdf_1_as_2_bsdf;
-            path_pdf_2_as_1 = path_pdf_2_as_1_bsdf;
-            path_pdf_2_as_2 = path_pdf_2_as_2_bsdf;
 
             rRec.type = RadianceQueryRecord::ERadianceNoEmission;
             rRec2.type = RadianceQueryRecord::ERadianceNoEmission;
             
             rRec.depth++;
-            rRec2.depth++;
         }
 
         return Li;
@@ -1129,15 +674,22 @@ public:
             
             //printf("MIS WEIGHT w_p : %f, w_d : %f, sum : %f \n", mis_position, mis_direction, mis_position + mis_direction);
 
-            if(m_preserve_primal_mis_weight_to_one){
-                Li += 0.5f * neePathThroughput1 / path_pdf_1_as_1;
-            } else {
-                Li += 0.5f * mis_position * neePathThroughput1 / path_pdf_1_as_1;// * miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, 0);
-                Li += 0.5f * mis_direction * neePathThroughput1 / path_pdf_1_as_1;// * miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, 0);
-            }
+            Li += 0.5f * mis_position * neePathThroughput1 / path_pdf_1_as_1;// * miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, 0);
+            Li += 0.5f * mis_direction * neePathThroughput1 / path_pdf_1_as_1;// * miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, 0);
             
             Li += 0.5f * mis_position * neePathThroughput2 / path_pdf_2_as_2;// * miWeight3(path_pdf_2_as_2, path_pdf_2_as_1, 0);
             Li += 0.5f * mis_direction * neePathThroughput3 / path_pdf_3_as_3;// * miWeight3(path_pdf_3_as_3, path_pdf_3_as_1, 0);
+
+            if(strcmp(m_antithetic_sampling_mode.c_str(), "mixed")==0){
+
+                //Li += neePathThroughput1 / path_pdf_1_as_1 * miWeight3(path_pdf_1_as_1, path_pdf_1_as_3, 0);
+                //Li += neePathThroughput3 / path_pdf_3_as_3 * miWeight3(path_pdf_3_as_3, path_pdf_3_as_1, 0);
+                //Li += neePathThroughput1 / path_pdf_1_as_1 * miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, 0);
+                //Li += neePathThroughput2 / path_pdf_2_as_2 * miWeight3(path_pdf_2_as_2, path_pdf_2_as_1, 0);
+                //Li += neePathThroughput1 / path_pdf_1_as_1 * 0.5f; //miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, path_pdf_1_as_3);
+                //Li += neePathThroughput2 / path_pdf_2_as_2 * 0.5f * miWeight3(path_pdf_2_as_2, path_pdf_2_as_3, 0);
+                //Li += neePathThroughput3 / path_pdf_3_as_3 * 0.5f * miWeight3(path_pdf_3_as_3, path_pdf_3_as_2, 0);
+            }
 
             if(rRec.depth + 1>=m_maxDepth){
                 break;
@@ -1306,15 +858,6 @@ public:
         if(strcmp(m_antithetic_sampling_mode.c_str(), "mis")==0){
             return Li_helper_mis(r, rRec, ray2_time);
         }
-
-        if(strcmp(m_antithetic_sampling_mode.c_str(), "mixed")==0){
-            return Li_helper(r, rRec, ray2_time);
-        }
-
-        if(strcmp(m_antithetic_sampling_mode.c_str(), "mixed2")==0){
-            return Li_helper(r, rRec, ray2_time);
-        }
-        
         return Li_helper(r, rRec, ray2_time);
     }
 
@@ -1380,7 +923,6 @@ private:
     bool m_force_constant_attenuation;
     bool m_correlate_time_samples;
     bool m_antithetic_sampling_by_shift;
-    bool m_preserve_primal_mis_weight_to_one;
     std::string m_antithetic_sampling_mode;
 };
 

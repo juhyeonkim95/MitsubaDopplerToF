@@ -17,6 +17,7 @@
 */
 
 #include "instance.h"
+#include <mitsuba/render/emitter.h>
 
 MTS_NAMESPACE_BEGIN
 

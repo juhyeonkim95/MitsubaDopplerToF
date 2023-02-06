@@ -18,7 +18,6 @@
 
 #include <mitsuba/render/scene.h>
 #include <mitsuba/core/statistics.h>
-#include "../../shapes/instance.h"
 
 MTS_NAMESPACE_BEGIN
 
@@ -173,7 +172,7 @@ public:
         Float path_pdf = 1.0f;
         Spectrum path_throughput(1.0f);
         Float G = 1.0f;
-
+        
         // path 2 (antithetic path)
         bool path2_blocked = false;
         Intersection &its2 = rRec2.its;
@@ -368,7 +367,7 @@ public:
 
             // Strategy choosing heuristics
             Float roughness = bsdf->getRoughness(its, 0);
-            roughness = std::min(roughness, 20.0);
+            roughness = std::min(roughness, 2.0);
             Float reflected_dist = -1.0f;
             Vector3 reflected_dir = reflect(-ray.d, its.shFrame.n);
             Ray ray_mirror = Ray(its.p, reflected_dir, ray.time);
@@ -435,11 +434,11 @@ public:
                 break;
             }
 
-            //if(!(bRec.sampledType & BSDF::EDelta)){
+            if(!(bRec.sampledType & BSDF::EDelta)){
                 G = std::abs(dot(its.shFrame.n, ray.d)) / (its.t * its.t);
-            //} else {
-            //    G = 1.0;
-            //}
+            } else {
+                G = 1.0;
+            }
             path_length += its.t;
 
 
@@ -470,133 +469,29 @@ public:
                 Intersection next_its_p = its;
                 next_its_p.adjustTime(ray2.time);
                 next_its_p.t = (next_its_p.p - its2.p).length();
+                
 
                 // (2) Directional Correlation
-                Intersection next_its_d;
+                Intersection next_its_d = its;
                 BSDFSamplingRecord bRec2_d(its2, rRec2.sampler, ERadiance);
-                Spectrum bsdfWeight_d = bsdf2->sample(bRec2_d, bsdfPdf2, usedSample);
+                bsdf2->sample(bRec2_d, bsdfPdf2, usedSample);
                 const Vector wo2_d = its2.toWorld(bRec2_d.wo);
                 Ray ray2_d = Ray(its2.p, wo2_d, ray2.time);
-
-                std::string shape_name = typeid(*its.shape).name();
-                // std::cout <<  "NAME!!!"<< typeid(*its.shape).name() << std::endl;
-                
-                Float temp[2];
-                Float t_temp;
-                Float t_area;
-                // next_its_p.shape->adjustTime(ray2.time);
-                if(next_its_p.instance){
-                    const Instance *instance = reinterpret_cast<const Instance*>(next_its_p.instance);
-                    Ray ray_temp;
-                    const Transform &trafo = instance->getAnimatedTransform()->eval(ray2.time);
-                    trafo.inverse()(ray2_d, ray_temp);
-
-                    //std::cout << "TRAFO" << trafo.toString() << std::endl;
-                    
-                    //Point p0 = (trafo1.inverse()(its.p0));
-                    //Point p1 = (trafo1.inverse()(its.p1));
-                    //Point p2 = (trafo1.inverse()(its.p2));
-
-                    
-                    if (shape_name.find("Rectangle") != std::string::npos){
-                        next_its_p.shape->rayIntersectForced(ray_temp, ray_temp.mint, ray_temp.maxt, t_temp, temp);
-                        next_its_d.p = trafo(ray_temp(t_temp));
-                        t_area = 1.0;
-                    } else {
-                        Triangle::rayIntersectForced(its.p0, its.p1, its.p2, ray_temp, temp[0], temp[1], t_temp);
-                        next_its_d.p = trafo(ray_temp(t_temp));
-                        const Transform &trafo1 = instance->getAnimatedTransform()->eval(ray.time);
-                        Point p0 = trafo1(its.p0);
-                        Point p1 = trafo1(its.p1);
-                        Point p2 = trafo1(its.p2);
-                        Vector e1 = p1 - p0;
-                        Vector e2 = p2 - p0;
-                        t_area = cross(e1, e2).length();
-                    }
-                    
-                    //trafo.inverse()(_ray, ray);
-                } else {
-                    next_its_p.shape->rayIntersect(ray2_d, ray2_d.mint, ray2_d.maxt, t_temp, temp);
-                    next_its_d.p = ray2_d(t_temp);
-                }
-
-
-                
-                
-                Intersection next_its_d_temp;
-                ray2_d = Ray(its2.p, wo2_d, ray2.time);
-                scene->rayIntersect(ray2_d, next_its_d_temp);
-                if(next_its_d_temp.isValid()){
-                    if((next_its_d.p - next_its_d_temp.p).length() > 0.1){
-                        // printf("ours, (%.3f, %.3f, %.3f), (%.3f, %.3f, %.3f), (%.3f, %.3f)\n", 
-                        // next_its_d.p.x, next_its_d.p.y, next_its_d.p.z,
-                        // next_its_d_temp.p.x, next_its_d_temp.p.y, next_its_d_temp.p.z,
-                        // next_its_d.uv[0], next_its_d.uv[1]
-                        // );
-
-                        // printf("Distance T: %f, %f \n", t_temp, next_its_d_temp.t);
-
-
-                        // std::cout << next_its_d.p.toString() << next_its_d_temp.p.toString() << std::endl;
-                    }
-                }
-
-                //Point p_temp = its2.p + next_its_d_temp.t * wo2_d;
-                
-                //std::cout << "ITS" << its.shFrame.toString() << std::endl;
-
-                // if(next_its_d_temp.isValid()){
-                //     printf("ours, (%.3f, %.3f, %.3f), (%.3f, %.3f, %.3f), (%.3f, %.3f)\n", 
-                //     next_its_d.p.x, next_its_d.p.y, next_its_d.p.z,
-                //     next_its_d_temp.p.x, next_its_d_temp.p.y, next_its_d_temp.p.z,
-                //     next_its_d.uv[0], next_its_d.uv[1]
-                //     );
-                //     //std::cout << next_its_d_temp.p.toString() << p_temp.toString()<< std::endl;
-                //     printf("Distance T: %f, %f \n", t_temp, next_its_d_temp.t);
-                // }
-                //->rayIntersectForced(ray2_d, ray2_d.mint, ray2_d.maxt, t_temp, temp);
-                
-                // next_its_d.p = ray2_d(t_temp);//its2.p + wo2_d * t_temp;
-
-                next_its_d.t = t_temp;
-                next_its_d.uv = Point2(0.5f * (temp[0]+1), 0.5f * (temp[1]+1));
-                next_its_d.barycentric = Vector(1 - temp[0] - temp[1], temp[0], temp[1]);
-
-                //Float next_ids_d_k = dot(its2.p - next_its_p.p, next_its_p.shFrame.n) / dot(its.p - its2.p, next_its_p.shFrame.n);
-                //next_its_d.p = its2.p + (its.p - its2.p);
-
-                //printf("ours2, %f, %f, %f\n", next_its_d.p.x, next_its_d.p.y, next_its_d.p.z);
-                //printf("uv, %f, %f\n", next_its_d.uv[0], next_its_d.uv[1]);
-                // Check discontinuity
-                // path2_blocked |= !next_its_d.isValid();//(!check_consistency(its, next_its_d)); 
-                // if(!next_its_d.isValid()){
-                //     printf("Coords, (%.3f, %.3f, %.3f)\n", its2.p.x, its2.p.y, its2.p.z);
-                //     printf("Coords, (%.3f, %.3f, %.3f)\n", next_its_d.p.x, next_its_d.p.y, next_its_d.p.z);
-                //     printf("UV Coords, (%.3f, %.3f)\n", next_its_d.uv.x, next_its_d.uv.y);
-                // }    
-
+                scene->rayIntersect(ray2_d, next_its_d);
                 Float G2_d;
-                //if(!(bRec2_d.sampledType & BSDF::EDelta)){
-                if(!path2_blocked){
+                if(!(bRec2_d.sampledType & BSDF::EDelta)){
                     G2_d = std::abs(dot(next_its_d.shFrame.n, ray2_d.d)) / (next_its_d.t * next_its_d.t);
                 } else {
-                    G2_d = 1.0;
+                    G2_d = 1.0f;
                 }
+
 
                 // (3) Mixed
                 Intersection next_its_m = next_its_p;
 
-                
-                Float jacobian_m = 1.0;
-                Float weight_p = 0.0;
-                // Float m_k = (1 / (roughness + 1e-5) * 0.8 + 1);
-
-                Float area = roughness * reflected_dist * reflected_dist / (reflected_cos_o);
-                // Float position_correlation_probability = 6.0f * area;
-                // position_correlation_probability = std::min(position_correlation_probability, 1.0);
-
-                // m_k large --> more directional
-                Float m_k = 1;//(t_area / (area + 1e-5) * 0.8 + 1);
+                std::string shape_name = typeid(*its.shape).name();
+                Float jacobian_m;
+                Float weight_p;
 
                 // Rectangle
                 if (shape_name.find("Rectangle") != std::string::npos){
@@ -630,6 +525,7 @@ public:
 
                     //m_x = its.p[2];
 
+                    Float m_k = (1 / (roughness + 1e-5) * 0.1 + 1);
                     weight_p = std::pow(m_x, m_k);
                     Float weight_p_prime = m_k * std::pow(m_x, m_k - 1);
 
@@ -637,89 +533,15 @@ public:
                     Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d));
                     
                     Float jacobian_m_1 = weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
-                    Float jacobian_m_2 = weight_p_prime * (-2) * dot(m_direction, next_its_p.uv - next_its_d.uv) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
+                    Float jacobian_m_2 = weight_p_prime * -2 * dot(m_direction, next_its_p.uv - next_its_d.uv) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
                     //Float jacobian_m = weight_p_prime * (next_its_p.p[2] - next_its_d.p[2]) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
                     jacobian_m = jacobian_m_1 * jacobian_m_2;
-                    // jacobian_m = std::abs(G / G2_d);//std::abs(jacobian_m);
-
-                    Float m_u = next_its_p.uv[0] * weight_p + next_its_d.uv[0] * (1-weight_p);
-                    Float m_v = next_its_p.uv[1] * weight_p + next_its_d.uv[1] * (1-weight_p);
-                    // // printf("m_v, m_u, %f, %f\n", m_v, m_u);
-
-                    if((m_u > 1) || (m_u < 0) || (m_v > 1) || (m_v < 0)){
-                        path2_blocked = true;
-                    }
+                    jacobian_m = std::abs(jacobian_m);
                 } 
                 
                 // Triangle
                 else {
-
-                    Float m_x_1 = its.barycentric[0];
-                    Float m_x_2 = its.barycentric[1];
-                    Float m_x_3 = its.barycentric[2];
-                    Float m_x;
-                    Vector m_direction;
-                    Float weight_p_prime;
-                    if((m_x_1 <= m_x_2) && (m_x_1 <= m_x_3)){
-                        m_x = m_x_1;
-                        m_direction = Vector(1.0, 0.0, 0.0);
-                        m_x = 1 - 3 * m_x;
-                        m_x = std::abs(m_x);
-                        weight_p = std::pow(m_x, m_k);
-                        weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-
-                        //weight_p = 0;
-                        //weight_p_prime = 0;
-                    }
-                    else if((m_x_2 <= m_x_1) && (m_x_2 <= m_x_3)){
-                        m_x = m_x_2;
-                        m_direction = Vector(0.0, 1.0, 0.0);
-                        m_x = 1 - 3 * m_x;
-                        m_x = std::abs(m_x);
-                        weight_p = std::pow(m_x, m_k);
-                        weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-
-                        //weight_p = 0;
-                        //weight_p_prime = 0;
-                        
-                    }
-                    else if((m_x_3 <= m_x_1) && (m_x_3 <= m_x_2)){
-                        m_x = m_x_3;
-                        m_direction = Vector(0.0, 0.0, 1.0);
-                        m_x = 1 - 3 * m_x;
-                        m_x = std::abs(m_x);
-                        weight_p = std::pow(m_x, m_k);
-                        weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-                        //weight_p = 0;
-                        //weight_p_prime = 0;
-                        
-                        // weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-                        // weight_p = 0;//std::pow(m_x, m_k);
-                        // weight_p_prime = 0;//m_k * std::pow(m_x, m_k - 1);
-                    }
-
-                    //weight_p = 0;//std::pow(m_x, m_k);
-                    //weight_p_prime = 0;
-
-                    Float jacobian_p_sqrt = 1;
-                    Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d));
                     
-                    Float jacobian_m_1 = weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
-                    Float jacobian_m_2 = weight_p_prime * (-3) * dot(m_direction, next_its_p.barycentric - next_its_d.barycentric) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
-                    jacobian_m = jacobian_m_1 * jacobian_m_2;
-
-                    m_x_1 = next_its_p.barycentric[0] * weight_p + next_its_d.barycentric[0] * (1-weight_p);
-                    m_x_2 = next_its_p.barycentric[1] * weight_p + next_its_d.barycentric[1] * (1-weight_p);
-                    m_x_3 = next_its_p.barycentric[2] * weight_p + next_its_d.barycentric[2] * (1-weight_p);
-
-                    // if(next_its_d_temp.isValid()){
-                    //     // path2_blocked = true;
-                    //     m_k *= 2;
-                    // }
-                    
-                    //if((m_x_1 > 1) || (m_x_1 < 0) || (m_x_2 > 1) || (m_x_2 < 0) || (m_x_3 < 0) || (m_x_3 > 1)){
-                    //    path2_blocked = true;
-                    //}
                 }
 
                 // rectangle
@@ -735,41 +557,62 @@ public:
                 
                 // Point pg = (p0 + p1 + p2) / 3.0;
                 // Triangle::rayIntersect(p0, p1, pg);
-                if(!path2_blocked){
-                    if(!(bRec2_d.sampledType & BSDF::EDelta)){
-                        next_its_m.p = weight_p * next_its_p.p + (1 - weight_p) * next_its_d.p;
-                        next_its_m.t = (next_its_m.p - its2.p).length();
-                        
-                        const Vector wo2_m = normalize(next_its_m.p - its2.p);
-                        ray2 = Ray(its2.p, wo2_m, ray2.time);
 
-                        Intersection next_its_m_temp;
-                        scene->rayIntersect(ray2, next_its_m_temp);
-                        if(next_its_m_temp.isValid()){
-                            BSDFSamplingRecord bRec2_m(its2, its2.toLocal(wo2_m), ERadiance);
-                            bsdfVal2 = bsdf2->eval(bRec2_m);
-                            bsdfPdf2 = bsdf2->pdf(bRec2_m);    
-                        } else {
-                            path2_blocked = true;
-                        }
-                        next_its_m = next_its_m_temp;
+                
 
-                    } else {
-                        next_its_m = next_its_d;
-                        const Vector wo2_m = normalize(next_its_m.p - its2.p);
-                        ray2 = Ray(its2.p, wo2_m, ray2.time);
-                        bsdfVal2 = bsdfWeight_d;
-                        bsdfPdf2 = 1.0;
-                    }
+                Float m_x_1 = its.barycentric[0];
+                Float m_x_2 = its.barycentric[1];
+                Float m_x_3 = its.barycentric[2];
+                Float m_x;
+                Vector m_direction;
+                if((m_x_1 <= m_x_2) && (m_x_1 <= m_x_3)){
+                    m_x = m_x_1;
+                    m_direction = Vector(1.0, 0.0, 0.0);
+                }
+                else if((m_x_2 <= m_x_1) && (m_x_2 <= m_x_3)){
+                    m_x = m_x_2;
+                    m_direction = Vector(0.0, 1.0, 0.0);
+                }
+                else if((m_x_3 <= m_x_1) && (m_x_3 <= m_x_2)){
+                    m_x = m_x_3;
+                    m_direction = Vector(0.0, 0.0, 1.0);
+                }
+                m_x = 1 - 3 * m_x;
+                m_x = std::abs(m_x);
+                
+                Float m_k = (1 / (roughness + 1e-5) * 0.1 + 1);
+                Float weight_p = std::pow(m_x, m_k);
+                Float weight_p_prime = m_k * std::pow(m_x, m_k - 1);
+
+                Float jacobian_p_sqrt = 1;
+                Float jacobian_d_sqrt = std::sqrt(G / G2_d);
+                
+                Float jacobian_m_1 = weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
+                Float jacobian_m_2 = weight_p_prime * -3 * dot(m_direction, next_its_p.barycentric - next_its_d.barycentric) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
+                Float jacobian_m = jacobian_m_1 * jacobian_m_2;
+
+
+                next_its_m.p = weight_p * next_its_p.p + (1 - weight_p) * next_its_d.p;
+                next_its_m.t = (next_its_m.p - its2.p).length();
+
+                const Vector wo2_m = normalize(next_its_m.p - its2.p);
+                ray2 = Ray(its2.p, wo2_m, ray2.time);
+                
+                
+                scene->rayIntersect(ray2, next_its_m);
+                
+                BSDFSamplingRecord bRec2_m(its2, its2.toLocal(wo2_m), ERadiance);
+                bsdfVal2 = bsdf2->eval(bRec2_m);
+                bsdfPdf2 = bsdf2->pdf(bRec2_m);
+
+                if(!(bRec2_m.sampledType & BSDF::EDelta)){
                     G2 = std::abs(dot(next_its_m.shFrame.n, ray2.d)) / (next_its_m.t * next_its_m.t);
-
-                    path_length2 += next_its_m.t;
-
-                    its2 = next_its_m;
                 } else {
                     G2 = 1.0;
                 }
-                
+                path_length2 += next_its_m.t;
+
+                its2 = next_its_m;
                 
                 // path_pdf_1_as_1_nee = path_pdf_1_as_1 * lumPdf * G;
                 path_pdf_1_as_2_nee = path_pdf_1_as_2 * lumPdf2 * G2 * jacobian_m;

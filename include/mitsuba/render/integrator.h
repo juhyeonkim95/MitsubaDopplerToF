@@ -433,6 +433,7 @@ protected:
 protected:
     /// Used to temporarily cache a parallel process while it is in operation
     ref<ParallelProcess> m_process;
+    bool m_needOffset=false;
 };
 
 /*

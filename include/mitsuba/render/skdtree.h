@@ -358,7 +358,11 @@ protected:
             const Point &p0 = vertexPositions[idx0];
             const Point &p1 = vertexPositions[idx1];
             const Point &p2 = vertexPositions[idx2];
-
+            its.barycentric = Vector(1 - cache->u - cache->v, cache->u, cache->v);
+            its.p0 = p0;
+            its.p1 = p1;
+            its.p2 = p2;
+            
             if (BarycentricPos)
                 its.p = p0 * b.x + p1 * b.y + p2 * b.z;
             else

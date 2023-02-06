@@ -169,6 +169,12 @@ public:
 
     /// Stores a pointer to the parent instance, if applicable
     const Shape *instance;
+
+    // barycentric coordinate
+    Vector barycentric;
+    Point p0;
+    Point p1;
+    Point p2;
 };
 
 /** \brief Abstract base class of all shapes
@@ -251,6 +257,10 @@ public:
      * <tt>intersection = shape.rayIntersect(ray, mint, maxt)</tt>
      */
     virtual bool rayIntersect(const Ray &ray, Float mint,
+            Float maxt, Float &t, void *temp) const;
+
+    // Forced ray intersect. Minus coordinate can appear
+    virtual bool rayIntersectForced(const Ray &ray, Float mint,
             Float maxt, Float &t, void *temp) const;
 
     /**
