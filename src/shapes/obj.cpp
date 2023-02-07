@@ -628,8 +628,11 @@ public:
 
         /* Collapse the mesh into a more usable form */
         Triangle *triangleArray = new Triangle[triangles.size()];
+        std::map<std::pair<int, int>, std::vector<std::pair<int, int>>> edgeDictionary;
+
         for (uint32_t i=0; i<triangles.size(); i++) {
             Triangle tri;
+            uint32_t keys[3];
             for (uint32_t j=0; j<3; j++) {
                 int vertexId = triangles[i].p[j];
                 int normalId = triangles[i].n[j];
@@ -681,9 +684,51 @@ public:
                 }
 
                 tri.idx[j] = key;
+                tri.neighbors[j] = nullptr;
+                keys[j] = key;
             }
+            //std::sort(keys, keys+3);
+            edgeDictionary[std::make_pair(std::min(keys[0], keys[1]), std::max(keys[0], keys[1]))].push_back(std::make_pair(i, 2));
+            edgeDictionary[std::make_pair(std::min(keys[1], keys[2]), std::max(keys[1], keys[2]))].push_back(std::make_pair(i, 0));
+            edgeDictionary[std::make_pair(std::min(keys[2], keys[0]), std::max(keys[2], keys[0]))].push_back(std::make_pair(i, 1));
             triangleArray[i] = tri;
         }
+
+        for(const auto& elem : edgeDictionary)
+        {
+            
+            if(elem.second.size() > 1){
+                int tri1_idx = elem.second[0].first;
+                int tri2_idx = elem.second[1].first;
+                Triangle *tri1 = &triangleArray[tri1_idx];
+                Triangle *tri2 = &triangleArray[tri2_idx];
+                
+                int tri1_edge_idx = elem.second[0].second;
+                int tri2_edge_idx = elem.second[1].second;
+
+                int normal_idx1 = triangles[tri1_idx].n[tri1_edge_idx] - 1;
+                int normal_idx2 = triangles[tri2_idx].n[tri2_edge_idx] - 1;
+
+                float tri_similarity = dot(normals[normal_idx1], normals[normal_idx2]);
+                if(tri_similarity > 0.999){ 
+                    // std::cout << "EDGE" << elem.first.first << ", " << elem.first.second << std::endl;
+                    for(const auto& triinfo : elem.second){
+                        //std::cout << triinfo.first << ", " << triinfo.second << std::endl;
+                    }
+                    //tri1->neighbors[tri1_edge_idx] = tri2;
+                    //tri2->neighbors[tri2_edge_idx] = tri1;
+
+                    // elem.second[1].first->neighbors[elem.second[1].second] = elem.second[0].first;
+                }
+                // std::cout << "Triangle similarity: " << tri_similarity << std::endl;
+                // std::cout << "Normal1: " << normals[normal_idx1].toString() << std::endl;
+                // std::cout << "Normal2: " << normals[normal_idx2].toString() << std::endl;
+                // std::cout << "Edge1: " << tri1_edge_idx << std::endl;
+                // std::cout << "Edge2: " << tri2_edge_idx << std::endl;
+                
+            }
+        }
+
 
         ref<TriMesh> mesh = new TriMesh(name,
             triangles.size(), vertexBuffer.size(),

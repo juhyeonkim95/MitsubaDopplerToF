@@ -35,6 +35,7 @@ MTS_NAMESPACE_BEGIN
 struct MTS_EXPORT_CORE Triangle {
     /// Indices into a vertex buffer
     uint32_t idx[3];
+    Triangle* neighbors[3];
 
     /// Construct an axis-aligned box, which contains the triangle
     inline AABB getAABB(const Point *positions) const {

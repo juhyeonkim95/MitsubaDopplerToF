@@ -187,7 +187,6 @@ public:
         Spectrum path_throughput2(1.0f);
         Float G2 = 1.0f;
 
-
         Float path_pdf_1_as_1 = 1.0f;
         Float path_pdf_1_as_2 = 1.0f;
         Float path_pdf_2_as_1 = 1.0f;
@@ -442,7 +441,6 @@ public:
             //}
             path_length += its.t;
 
-
             if (hitEmitter &&
                 (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance)) {
                 /* Compute the prob. of generating that direction using the
@@ -453,7 +451,6 @@ public:
 
             path_pdf_1_as_1_nee = path_pdf_1_as_1 * lumPdf * G;
             path_pdf_1_as_1_bsdf = path_pdf_1_as_1 * bsdfPdf * G; 
-
 
             ////////////////////////////////////
             // path 2
@@ -484,6 +481,10 @@ public:
                 Float temp[2];
                 Float t_temp;
                 Float t_area;
+                Float t_dist;
+                Float t_cos;
+                bool edge_continuous[3];
+
                 // next_its_p.shape->adjustTime(ray2.time);
                 if(next_its_p.instance){
                     const Instance *instance = reinterpret_cast<const Instance*>(next_its_p.instance);
@@ -492,37 +493,50 @@ public:
                     trafo.inverse()(ray2_d, ray_temp);
 
                     //std::cout << "TRAFO" << trafo.toString() << std::endl;
-                    
                     //Point p0 = (trafo1.inverse()(its.p0));
                     //Point p1 = (trafo1.inverse()(its.p1));
                     //Point p2 = (trafo1.inverse()(its.p2));
-
                     
                     if (shape_name.find("Rectangle") != std::string::npos){
                         next_its_p.shape->rayIntersectForced(ray_temp, ray_temp.mint, ray_temp.maxt, t_temp, temp);
                         next_its_d.p = trafo(ray_temp(t_temp));
                         t_area = 1.0;
+                        t_dist = 1.0;
+                        t_cos = 1.0;
                     } else {
                         Triangle::rayIntersectForced(its.p0, its.p1, its.p2, ray_temp, temp[0], temp[1], t_temp);
                         next_its_d.p = trafo(ray_temp(t_temp));
+                        if(t_temp < 0){
+                            //std::cout << next_its_d.p.toString() << std::endl;
+                            //std::cout << its.p1.toString() << std::endl;
+                            //std::cout << its.p2.toString() << std::endl;
+                        }
                         const Transform &trafo1 = instance->getAnimatedTransform()->eval(ray.time);
                         Point p0 = trafo1(its.p0);
                         Point p1 = trafo1(its.p1);
                         Point p2 = trafo1(its.p2);
+                        Point pa0 = trafo(its.p0);
+                        Point pa1 = trafo(its.p1);
+                        Point pa2 = trafo(its.p2);
+                        edge_continuous[0] = its.e0;
+                        edge_continuous[1] = its.e1;
+                        edge_continuous[2] = its.e2;
                         Vector e1 = p1 - p0;
                         Vector e2 = p2 - p0;
                         t_area = cross(e1, e2).length();
+                        t_dist = (its2.p - (p0 + p1 + p2) / 3).length();
+                        t_cos = dot(normalize(its2.p - (p0 + p1 + p2) / 3), its.shFrame.n);
+                        t_cos = std::abs(t_cos);
                     }
-                    
                     //trafo.inverse()(_ray, ray);
                 } else {
                     next_its_p.shape->rayIntersect(ray2_d, ray2_d.mint, ray2_d.maxt, t_temp, temp);
                     next_its_d.p = ray2_d(t_temp);
+                    t_area = 1.0;
+                    t_dist = 1.0;
+                    t_cos = 1.0;                    
                 }
 
-
-                
-                
                 Intersection next_its_d_temp;
                 ray2_d = Ray(its2.p, wo2_d, ray2.time);
                 scene->rayIntersect(ray2_d, next_its_d_temp);
@@ -535,7 +549,6 @@ public:
                         // );
 
                         // printf("Distance T: %f, %f \n", t_temp, next_its_d_temp.t);
-
 
                         // std::cout << next_its_d.p.toString() << next_its_d_temp.p.toString() << std::endl;
                     }
@@ -557,6 +570,7 @@ public:
                 //->rayIntersectForced(ray2_d, ray2_d.mint, ray2_d.maxt, t_temp, temp);
                 
                 // next_its_d.p = ray2_d(t_temp);//its2.p + wo2_d * t_temp;
+                //std::cout << "T temp: " << t_temp << std::endl;
 
                 next_its_d.t = t_temp;
                 next_its_d.uv = Point2(0.5f * (temp[0]+1), 0.5f * (temp[1]+1));
@@ -575,10 +589,11 @@ public:
                 //     printf("UV Coords, (%.3f, %.3f)\n", next_its_d.uv.x, next_its_d.uv.y);
                 // }    
 
-                Float G2_d;
+                Float G2_d = 1.0;
                 //if(!(bRec2_d.sampledType & BSDF::EDelta)){
                 if(!path2_blocked){
-                    G2_d = std::abs(dot(next_its_d.shFrame.n, ray2_d.d)) / (next_its_d.t * next_its_d.t);
+                    Float d_temp = next_its_d.t;//std::max(next_its_d.t, 1e-5);
+                    G2_d = std::abs(dot(next_its_p.shFrame.n, ray2_d.d)/(d_temp * d_temp));
                 } else {
                     G2_d = 1.0;
                 }
@@ -589,14 +604,29 @@ public:
                 
                 Float jacobian_m = 1.0;
                 Float weight_p = 0.0;
+                Float weight_p_prime = 0.0;
                 // Float m_k = (1 / (roughness + 1e-5) * 0.8 + 1);
 
-                Float area = roughness * reflected_dist * reflected_dist / (reflected_cos_o);
+                Float steradian = t_area * t_cos / (t_dist * t_dist);
+                // Float area = roughness * t_dist * t_dist / (t_cos);
                 // Float position_correlation_probability = 6.0f * area;
                 // position_correlation_probability = std::min(position_correlation_probability, 1.0);
 
                 // m_k large --> more directional
-                Float m_k = 1;//(t_area / (area + 1e-5) * 0.8 + 1);
+                // Float m_k = 1;//(t_area / (area + 1e-5) * 0.8 + 1);
+                // Float m_k = (steradian * roughness * 0.2 + 1);
+                Float m_k = (steradian / roughness * 0.2);
+                // if(steradian < 0.01){
+                //     m_k = 0.0;
+                // }
+
+                // m_k = 0.0;
+                // std::cout << "Steradians" << area << std::endl;
+                // std::cout << "t_dist" << t_dist << std::endl;
+                // std::cout << "t_cos" << t_cos << std::endl;
+                // std::cout << "t_area" << t_area << std::endl;
+                
+                bool mesh_hit_preserved = true;
 
                 // Rectangle
                 if (shape_name.find("Rectangle") != std::string::npos){
@@ -631,7 +661,7 @@ public:
                     //m_x = its.p[2];
 
                     weight_p = std::pow(m_x, m_k);
-                    Float weight_p_prime = m_k * std::pow(m_x, m_k - 1);
+                    weight_p_prime = m_k * std::pow(m_x, m_k - 1);
 
                     Float jacobian_p_sqrt = 1;
                     Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d));
@@ -657,55 +687,49 @@ public:
                     Float m_x_1 = its.barycentric[0];
                     Float m_x_2 = its.barycentric[1];
                     Float m_x_3 = its.barycentric[2];
+                    // std::cout << its.p2.toString() << std::endl;
+
                     Float m_x;
                     Vector m_direction;
-                    Float weight_p_prime;
+                    int N = 3;
+
+                    if(edge_continuous[0]){
+                        m_x_1 = 100;
+                        N -= 1;
+                    }
+                    if(edge_continuous[1]){
+                        m_x_2 = 100;
+                        N -= 1;
+                    }
+                    if(edge_continuous[2]){
+                        m_x_3 = 100;
+                        N -= 1;
+                    }
+
                     if((m_x_1 <= m_x_2) && (m_x_1 <= m_x_3)){
                         m_x = m_x_1;
                         m_direction = Vector(1.0, 0.0, 0.0);
-                        m_x = 1 - 3 * m_x;
-                        m_x = std::abs(m_x);
-                        weight_p = std::pow(m_x, m_k);
-                        weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-
-                        //weight_p = 0;
-                        //weight_p_prime = 0;
                     }
                     else if((m_x_2 <= m_x_1) && (m_x_2 <= m_x_3)){
                         m_x = m_x_2;
                         m_direction = Vector(0.0, 1.0, 0.0);
-                        m_x = 1 - 3 * m_x;
-                        m_x = std::abs(m_x);
-                        weight_p = std::pow(m_x, m_k);
-                        weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-
-                        //weight_p = 0;
-                        //weight_p_prime = 0;
-                        
                     }
-                    else if((m_x_3 <= m_x_1) && (m_x_3 <= m_x_2)){
+                    else if((m_x_3 <= m_x_2) && (m_x_3 <= m_x_1)){
                         m_x = m_x_3;
                         m_direction = Vector(0.0, 0.0, 1.0);
-                        m_x = 1 - 3 * m_x;
-                        m_x = std::abs(m_x);
-                        weight_p = std::pow(m_x, m_k);
-                        weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-                        //weight_p = 0;
-                        //weight_p_prime = 0;
-                        
-                        // weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-                        // weight_p = 0;//std::pow(m_x, m_k);
-                        // weight_p_prime = 0;//m_k * std::pow(m_x, m_k - 1);
                     }
+                    // std::cout << "N" << N << std::endl;
 
-                    //weight_p = 0;//std::pow(m_x, m_k);
-                    //weight_p_prime = 0;
-
+                    m_x = 1 - N * m_x;
+                    m_x = std::abs(m_x);
+                    weight_p = 0;//std::pow(m_x, m_k);
+                    weight_p_prime = 0;//m_k * std::pow(m_x, m_k - 1);
+                    
                     Float jacobian_p_sqrt = 1;
                     Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d));
                     
                     Float jacobian_m_1 = weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
-                    Float jacobian_m_2 = weight_p_prime * (-3) * dot(m_direction, next_its_p.barycentric - next_its_d.barycentric) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
+                    Float jacobian_m_2 = weight_p_prime * (-N) * dot(m_direction, next_its_p.barycentric - next_its_d.barycentric) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
                     jacobian_m = jacobian_m_1 * jacobian_m_2;
 
                     m_x_1 = next_its_p.barycentric[0] * weight_p + next_its_d.barycentric[0] * (1-weight_p);
@@ -717,10 +741,13 @@ public:
                     //     m_k *= 2;
                     // }
                     
-                    //if((m_x_1 > 1) || (m_x_1 < 0) || (m_x_2 > 1) || (m_x_2 < 0) || (m_x_3 < 0) || (m_x_3 > 1)){
-                    //    path2_blocked = true;
-                    //}
+                    if((m_x_1 > 1) || (m_x_1 < 0) || (m_x_2 > 1) || (m_x_2 < 0) || (m_x_3 < 0) || (m_x_3 > 1)){
+                        mesh_hit_preserved = false;
+                    }
                 }
+                //weight_p = 1.0;
+                //weight_p_prime = 0.0;
+                //jacobian_m = 1.0;
 
                 // rectangle
                 
@@ -737,22 +764,42 @@ public:
                 // Triangle::rayIntersect(p0, p1, pg);
                 if(!path2_blocked){
                     if(!(bRec2_d.sampledType & BSDF::EDelta)){
+                    //if(true){
                         next_its_m.p = weight_p * next_its_p.p + (1 - weight_p) * next_its_d.p;
                         next_its_m.t = (next_its_m.p - its2.p).length();
-                        
+                        //next_its_m = next_its_p;
                         const Vector wo2_m = normalize(next_its_m.p - its2.p);
                         ray2 = Ray(its2.p, wo2_m, ray2.time);
-
-                        Intersection next_its_m_temp;
-                        scene->rayIntersect(ray2, next_its_m_temp);
-                        if(next_its_m_temp.isValid()){
-                            BSDFSamplingRecord bRec2_m(its2, its2.toLocal(wo2_m), ERadiance);
-                            bsdfVal2 = bsdf2->eval(bRec2_m);
-                            bsdfPdf2 = bsdf2->pdf(bRec2_m);    
+                        mesh_hit_preserved = false;
+                        if(mesh_hit_preserved){
+                            ray2.maxt = next_its_m.t - 1e-2;
+                            ray2.mint = Epsilon;
+                            
+                            Intersection next_its_m_temp;
+                            path2_blocked |= scene->rayIntersect(ray2, next_its_m_temp);
+                            if(!path2_blocked){
+                                BSDFSamplingRecord bRec2_m(its2, its2.toLocal(wo2_m), ERadiance);
+                                bsdfVal2 = bsdf2->eval(bRec2_m);
+                                bsdfPdf2 = bsdf2->pdf(bRec2_m);
+                            }
                         } else {
-                            path2_blocked = true;
+                            
+                            Intersection next_its_m_temp;
+                            scene->rayIntersect(ray2, next_its_m_temp);
+                            if(check_consistency(its, next_its_m_temp)){
+                            //if(next_its_m_temp.isValid()){
+                                BSDFSamplingRecord bRec2_m(its2, its2.toLocal(wo2_m), ERadiance);
+                                bsdfVal2 = bsdf2->eval(bRec2_m);
+                                bsdfPdf2 = bsdf2->pdf(bRec2_m);
+                                
+
+                            } else {
+                                path2_blocked = true;
+                            }
+                            next_its_m = next_its_m_temp;
                         }
-                        next_its_m = next_its_m_temp;
+                        
+                        // next_its_m = next_its_m_temp;
 
                     } else {
                         next_its_m = next_its_d;
@@ -761,11 +808,15 @@ public:
                         bsdfVal2 = bsdfWeight_d;
                         bsdfPdf2 = 1.0;
                     }
-                    G2 = std::abs(dot(next_its_m.shFrame.n, ray2.d)) / (next_its_m.t * next_its_m.t);
+                    if(!path2_blocked){
+                        G2 = std::abs(dot(next_its_m.shFrame.n, ray2.d)) / (next_its_m.t * next_its_m.t);
+                    }
+                    jacobian_m = G / G2;
+
 
                     path_length2 += next_its_m.t;
-
-                    its2 = next_its_m;
+                    its2 = next_its_m;  
+                    
                 } else {
                     G2 = 1.0;
                 }
@@ -783,7 +834,6 @@ public:
                 path_pdf_2_as_1_bsdf = path_pdf_2_as_1 * bsdfPdf2 * G2;
                 path_pdf_2_as_2_bsdf = path_pdf_2_as_2 * bsdfPdf * G / jacobian_m;
             }
-
 
             ////////////////////////////////////
             // path 2
@@ -1059,7 +1109,6 @@ public:
                     if (!bsdfVal.isZero() && (!m_strictNormals
                             || dot(its.geoFrame.n, dRec.d) * Frame::cosTheta(bRec.wo) > 0)) {
 
-
                         Float em_path_length = path_length + dRec.dist;
 
                         Float em_modulation_weight = evalModulationWeight(ray.time, em_path_length);
@@ -1085,7 +1134,6 @@ public:
                     if (!bsdfVal2.isZero() && (!m_strictNormals
                             || dot(its2.geoFrame.n, dRec2.d) * Frame::cosTheta(bRec2.wo) > 0)) {
 
-
                         Float em_path_length2 = path_length2 + dRec2.dist;
 
                         Float em_modulation_weight2 = evalModulationWeight(ray2.time, em_path_length2);
@@ -1110,7 +1158,6 @@ public:
                     /* Prevent light leaks due to the use of shading normals */
                     if (!bsdfVal3.isZero() && (!m_strictNormals
                             || dot(its3.geoFrame.n, dRec3.d) * Frame::cosTheta(bRec3.wo) > 0)) {
-
 
                         Float em_path_length3 = path_length3 + dRec3.dist;
 
@@ -1217,7 +1264,6 @@ public:
                 scene->rayIntersect(ray3, its3);
                 // printf("%f, %f\n", bsdfPdf, bsdfPdf3);
 
-
                 // const Vector wo3 = its3.toWorld(bRec.wo);
                 // ray3 = Ray(its3.p, wo3, ray3.time);
                 // BSDFSamplingRecord bRec3(its3, its3.toLocal(wo3), ERadiance);
@@ -1257,7 +1303,6 @@ public:
                 bsdfPdf3_as_2 = bsdf->pdf(bRec3_as_2);
                 G3_as_2 = std::abs(dot(its_3_as_2.shFrame.n, wo_3_as_2)) / (its_3_as_2.p - its_prev.p).lengthSquared();
             }
-
 
             // path 2 as 3
             Float bsdfPdf2_as_3 = 0.0f;
@@ -1387,3 +1432,5 @@ private:
 MTS_IMPLEMENT_CLASS_S(ToFAntitheticPathTracer, false, MonteCarloIntegrator)
 MTS_EXPORT_PLUGIN(ToFAntitheticPathTracer, "ToF antithetic path tracer");
 MTS_NAMESPACE_END
+
+

@@ -362,6 +362,9 @@ protected:
             its.p0 = p0;
             its.p1 = p1;
             its.p2 = p2;
+            its.e0 = (tri.neighbors[0] != nullptr);
+            its.e1 = (tri.neighbors[1] != nullptr);
+            its.e2 = (tri.neighbors[2] != nullptr);
             
             if (BarycentricPos)
                 its.p = p0 * b.x + p1 * b.y + p2 * b.z;

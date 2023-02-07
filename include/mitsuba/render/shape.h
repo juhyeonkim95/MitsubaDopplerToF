@@ -175,6 +175,9 @@ public:
     Point p0;
     Point p1;
     Point p2;
+    bool e0;
+    bool e1;
+    bool e2;
 };
 
 /** \brief Abstract base class of all shapes
