@@ -172,12 +172,19 @@ public:
 
     // barycentric coordinate
     Vector barycentric;
+    Triangle *tri;
     Point p0;
     Point p1;
     Point p2;
-    bool e0;
-    bool e1;
-    bool e2;
+    Point p0w;
+    Point p1w;
+    Point p2w;
+    float edge_similarity[3];
+    float edge_continuous_at_view[3];
+    float smoothness;
+    //float e0;
+    //float e1;
+    //float e2;
 };
 
 /** \brief Abstract base class of all shapes

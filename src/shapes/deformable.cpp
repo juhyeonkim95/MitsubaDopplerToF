@@ -456,10 +456,20 @@ public:
         its.p0 = p0;
         its.p1 = p1;
         its.p2 = p2;
-        its.e0 = (tri.neighbors[0] != nullptr);
-        its.e1 = (tri.neighbors[1] != nullptr);
-        its.e2 = (tri.neighbors[2] != nullptr);
-        
+        //its.tri = &tri;
+        its.edge_similarity[0] = tri.face_similarity[0];
+        its.edge_similarity[1] = tri.face_similarity[1];
+        its.edge_similarity[2] = tri.face_similarity[2];
+        if(tri.neighbors[0] != nullptr){
+            its.edge_continuous_at_view[0] = dot((tri.neighbor_centers[0] - ray.o), tri.neighbor_normals[0]);
+        }else{its.edge_continuous_at_view[0] = 0;}
+        if(tri.neighbors[1] != nullptr){
+            its.edge_continuous_at_view[1] = dot((tri.neighbor_centers[1] - ray.o), tri.neighbor_normals[1]);
+        }else{its.edge_continuous_at_view[1] = 0;}
+        if(tri.neighbors[2] != nullptr){
+            its.edge_continuous_at_view[2] = dot((tri.neighbor_centers[2] - ray.o), tri.neighbor_normals[2]);
+        }else{its.edge_continuous_at_view[2] = 0;}
+        its.smoothness = tri.smoothness;
 
         Vector side1(p1-p0), side2(p2-p0);
         Normal faceNormal(cross(side1, side2));
@@ -484,7 +494,7 @@ public:
                 n2 = (1-alpha) * vertexNormals0[idx2] + alpha * vertexNormals1[idx2];
 
             its.shFrame.n = normalize(n0 * b.x + n1 * b.y + n2 * b.z);
-
+            
             /* Ensure that the geometric & shading normals face the same direction */
             if (dot(faceNormal, its.shFrame.n) < 0)
                 faceNormal = -faceNormal;

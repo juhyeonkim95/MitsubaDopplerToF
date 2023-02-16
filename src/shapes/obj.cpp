@@ -27,6 +27,7 @@
 #include <mitsuba/render/sensor.h>
 #include <mitsuba/hw/basicshader.h>
 #include <set>
+#include <queue>
 
 MTS_NAMESPACE_BEGIN
 
@@ -633,6 +634,7 @@ public:
         for (uint32_t i=0; i<triangles.size(); i++) {
             Triangle tri;
             uint32_t keys[3];
+            Point points[3];
             for (uint32_t j=0; j<3; j++) {
                 int vertexId = triangles[i].p[j];
                 int normalId = triangles[i].n[j];
@@ -651,6 +653,7 @@ public:
                     Log(EError, "Out of bounds: tried to access vertex %i (max: %i)", vertexId, (int) vertices.size());
 
                 vertex.p = objectToWorld(vertices[vertexId-1]);
+                points[j] = vertex.p;
                 aabb.expandBy(vertex.p);
 
                 if (normalId != 0) {
@@ -685,8 +688,20 @@ public:
 
                 tri.idx[j] = key;
                 tri.neighbors[j] = nullptr;
+                tri.face_similarity[j] = 0;
+                tri.neighbor_centers[j] = Point(0.0, 0.0, 0.0);
+                tri.neighbor_normals[j] = Vector(0.0, 0.0, 0.0);
                 keys[j] = key;
             }
+
+            Vector e1 = points[1] - points[0];
+            Vector e2 = points[2] - points[0];
+            tri.normal = normalize(cross(e1, e2));
+            tri.area = cross(e1, e2).length();
+            tri.center = (points[0] + points[1] + points[2]) / 3;
+                
+            tri.arrayIndex = i;
+
             //std::sort(keys, keys+3);
             edgeDictionary[std::make_pair(std::min(keys[0], keys[1]), std::max(keys[0], keys[1]))].push_back(std::make_pair(i, 2));
             edgeDictionary[std::make_pair(std::min(keys[1], keys[2]), std::max(keys[1], keys[2]))].push_back(std::make_pair(i, 0));
@@ -710,23 +725,58 @@ public:
                 int normal_idx2 = triangles[tri2_idx].n[tri2_edge_idx] - 1;
 
                 float tri_similarity = dot(normals[normal_idx1], normals[normal_idx2]);
-                if(tri_similarity > 0.999){ 
-                    // std::cout << "EDGE" << elem.first.first << ", " << elem.first.second << std::endl;
-                    for(const auto& triinfo : elem.second){
-                        //std::cout << triinfo.first << ", " << triinfo.second << std::endl;
-                    }
-                    //tri1->neighbors[tri1_edge_idx] = tri2;
-                    //tri2->neighbors[tri2_edge_idx] = tri1;
+                tri1->face_similarity[tri1_edge_idx] = tri_similarity;
+                tri2->face_similarity[tri2_edge_idx] = tri_similarity;
+                tri1->neighbor_centers[tri1_edge_idx] = tri2->center;
+                tri2->neighbor_centers[tri2_edge_idx] = tri1->center;
+                tri1->neighbor_normals[tri1_edge_idx] = tri2->normal;
+                tri2->neighbor_normals[tri2_edge_idx] = tri1->normal;
 
-                    // elem.second[1].first->neighbors[elem.second[1].second] = elem.second[0].first;
-                }
-                // std::cout << "Triangle similarity: " << tri_similarity << std::endl;
-                // std::cout << "Normal1: " << normals[normal_idx1].toString() << std::endl;
-                // std::cout << "Normal2: " << normals[normal_idx2].toString() << std::endl;
-                // std::cout << "Edge1: " << tri1_edge_idx << std::endl;
-                // std::cout << "Edge2: " << tri2_edge_idx << std::endl;
-                
+                tri1->neighbors[tri1_edge_idx] = tri2;
+                tri2->neighbors[tri2_edge_idx] = tri1;
             }
+        }
+
+        for(int i=0; i < triangles.size(); i++){
+            Triangle *tri = &triangleArray[i];
+            std::queue<Triangle*> neighbors;
+            bool visited_array[triangles.size()] = {0};
+            neighbors.push(tri);
+            visited_array[tri->arrayIndex] = true;
+            float similarity1=0.0;
+            float similarity2=0.0;
+            float neighbor_weights = 0.0;
+            int neighbor_count = 0;
+            float continuous_area = 0;
+            while(!neighbors.empty()){
+                Triangle *nTri = neighbors.front();
+                neighbors.pop();
+
+                float distance = (tri->center - nTri->center).length();
+                float attenuation = std::exp(-5.0 * distance);
+                float v = 0.5 + 0.5 * dot(tri->normal, nTri->normal);
+                if(v > 0.9){
+                    continuous_area += tri->area;
+                }
+                v = std::pow(v, 5);
+                similarity2 += attenuation * v * v;
+                similarity1 += attenuation * v;
+
+                neighbor_weights += attenuation;
+                neighbor_count += 1;
+                if(distance < 10){
+                    for(int j=0; j<3; j++){
+                        if(nTri->neighbors[j] != nullptr && !(visited_array[nTri->neighbors[j]->arrayIndex])){
+                            neighbors.push(nTri->neighbors[j]);
+                            visited_array[nTri->neighbors[j]->arrayIndex] = true;
+                        }
+                    }
+                }
+            }
+            float mean = similarity1 / neighbor_weights;
+            float variance = similarity2 / neighbor_weights - mean * mean;
+            tri->smoothness = mean;//1.0 / variance;
+            //std::cout << "smoothness : " << tri->smoothness << ", Neighbors :" << neighbor_count << std::endl;
         }
 
 

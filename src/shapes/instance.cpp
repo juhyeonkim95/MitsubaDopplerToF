@@ -157,6 +157,9 @@ void Instance::fillIntersectionRecord(const Ray &_ray,
     its.dpdu = trafo(its.dpdu);
     its.dpdv = trafo(its.dpdv);
     its.p = trafo(its.p);
+    its.p0w = trafo(its.p0);
+    its.p1w = trafo(its.p1);
+    its.p2w = trafo(its.p2);
     its.instance = this;
 }
 

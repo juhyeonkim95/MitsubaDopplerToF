@@ -35,7 +35,18 @@ MTS_NAMESPACE_BEGIN
 struct MTS_EXPORT_CORE Triangle {
     /// Indices into a vertex buffer
     uint32_t idx[3];
+    uint32_t arrayIndex;
+    float area;
+    float face_similarity[3];
+    Vector neighbor_normals[3];
+    Point neighbor_centers[3];
+    
+    Vector normal;
+    Point center;
     Triangle* neighbors[3];
+
+    float smoothness;
+
 
     /// Construct an axis-aligned box, which contains the triangle
     inline AABB getAABB(const Point *positions) const {

@@ -128,7 +128,6 @@ public:
         m_force_constant_attenuation = props.getBoolean("force_constant_attenuation", false);
         m_antithetic_sampling_by_shift = props.getBoolean("antitheticSamplingByShift", true);
         m_preserve_primal_mis_weight_to_one = props.getBoolean("preservePrimalMISWeightToOne", true);
-        m_mis_method = props.getString("misMethod", "mix_all");
 
         m_antithetic_sampling_mode = props.getString("antitheticSamplingMode", "position");
     }
@@ -158,45 +157,6 @@ public:
         return consistent;
     }
 
-    void printPoint(Point p1, Point p2) const{
-        printf("P1: %f, %f, %f / P2: %f, %f, %f\n", p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-    }
-    void printVector(Vector p1, Vector p2) const{
-        printf("V1: %f, %f, %f / V2: %f, %f, %f\n", p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-    }
-
-    
-    float getClosestDiscontinuityDistance(Intersection &its) const{
-        if(!its.isValid()){
-            return 0.0;
-        }
-        if(its.instance){
-            // const Instance *instance = reinterpret_cast<const Instance*>(next_its_p.instance);
-            // Ray ray_local;
-            // Transform trafo = instance->getAnimatedTransform()->eval(ray.time);
-            // trafo.inverse(ray, ray_local);
-            std::string shape_name = typeid(*its.shape).name();
-            
-            if (shape_name.find("Rectangle") != std::string::npos){
-                //next_its_p.shape->rayIntersectForced(ray_temp, ray_temp.mint, ray_temp.maxt, t_temp, temp);
-                //next_its_d.p = trafo(ray_temp(t_temp));
-                return 1.0;
-            } else {
-                Vector e0 = (its.p1w - its.p2w);
-                Vector e1 = (its.p2w - its.p0w);
-                Vector e2 = (its.p0w - its.p1w);
-                float area = 0.5 * cross(e0, e1).length();
-                float h0 = area / e0.length() * its.barycentric[0];
-                float h1 = area / e1.length() * its.barycentric[1];
-                float h2 = area / e2.length() * its.barycentric[2];
-
-                return area;//std::min(h0, std::min(h1, h2));
-            }
-        } else {
-            return 1.0;
-        }
-    }
-
     Spectrum Li_helper(const RayDifferential &r, RadianceQueryRecord &rRec, Float ray2_time) const {
         /* Some aliases and local variables */
         const Scene *scene = rRec.scene;
@@ -205,7 +165,6 @@ public:
 
         // path 1
         Intersection &its = rRec.its;
-        its.smoothness = 0.0;
         RayDifferential ray(r);
         rRec.rayIntersect(ray);
         ray.mint = Epsilon;
@@ -214,7 +173,6 @@ public:
         Float path_pdf = 1.0f;
         Spectrum path_throughput(1.0f);
         Float G = 1.0f;
-        Float G_geo = 1.0f;
 
         // path 2 (antithetic path)
         bool path2_blocked = false;
@@ -228,22 +186,19 @@ public:
         Float path_pdf2 = 1.0f;
         Spectrum path_throughput2(1.0f);
         Float G2 = 1.0f;
-        Float G2_geo = 1.0f;
 
         Float path_pdf_1_as_1 = 1.0f;
         Float path_pdf_1_as_2 = 1.0f;
         Float path_pdf_2_as_1 = 1.0f;
         Float path_pdf_2_as_2 = 1.0f;
 
-        //bool consistency = (dot(its2.shFrame.n, its.shFrame.n) > 0.9999999) && (std::abs(its2.t - its.t) < 0.1);
-        path2_blocked = (!its2.isValid());// || (!consistency);
-        
+        // bool consistency = (dot(its2.shFrame.n, its.shFrame.n) > 0.9) && (std::abs(its2.t - its.t) < 0.1);
+        path2_blocked = (!its2.isValid());
+
         while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
             if (!its.isValid()) {
                 break;
             }
-
-            // return Spectrum(its.smoothness);
 
             if (path2_blocked) {
                 path_throughput2 *= 0.0f;
@@ -298,7 +253,7 @@ public:
                             ? bsdf->pdf(bRec) : 0;
 
                         /* Weight using the power heuristic */
-                        Float weight = miWeight(dRec.pdf, bsdfPdf, 1);
+                        Float weight = miWeight(dRec.pdf, bsdfPdf);
     
                         Float em_path_length = path_length + dRec.dist;
 
@@ -417,20 +372,15 @@ public:
             Vector3 reflected_dir = reflect(-ray.d, its.shFrame.n);
             Ray ray_mirror = Ray(its.p, reflected_dir, ray.time);
             Intersection its_mirror;
-            its_mirror.smoothness = 0.0;
             Float reflected_cos_o = 1.0f;
-            Float reflected_cos_i = std::abs(dot(ray_mirror.d, its.shFrame.n));
-            float mirrorHitSmoothness = 0.0f;
             if(scene->rayIntersect(ray_mirror, its_mirror)){
                 reflected_dist = its_mirror.t;
                 reflected_cos_o = std::abs(dot(its_mirror.shFrame.n, ray_mirror.d));
-                mirrorHitSmoothness = its_mirror.smoothness;
             } else {
-                reflected_dist = 1000.0f;
+                reflected_dist = 10.0f;
                 reflected_cos_o = 1.0f;
             }
-            float closestDiscontinuityDistance = getClosestDiscontinuityDistance(its_mirror);
-            
+
             Float bsdfPdf;
             Spectrum bsdfVal = Spectrum(0.0f);
             Float bsdfPdf2 = 0.0f;
@@ -485,10 +435,7 @@ public:
             }
 
             //if(!(bRec.sampledType & BSDF::EDelta)){
-            G = std::abs(dot(its.shFrame.n, ray.d)) / (its.t * its.t);
-            G_geo = std::abs(dot(its.geoFrame.n, ray.d)) / (its.t * its.t);
-            Float G_dist = 1 / (its.t * its.t);
-            
+                G = std::abs(dot(its.shFrame.n, ray.d)) / (its.t * its.t);
             //} else {
             //    G = 1.0;
             //}
@@ -536,15 +483,13 @@ public:
                 Float t_area;
                 Float t_dist;
                 Float t_cos;
-                Float t_brdf = 1.0;
-                float edge_similarity[3];
-                float edge_continuous_at_view[3];
+                bool edge_continuous[3];
 
                 // next_its_p.shape->adjustTime(ray2.time);
                 if(next_its_p.instance){
                     const Instance *instance = reinterpret_cast<const Instance*>(next_its_p.instance);
                     Ray ray_temp;
-                    Transform trafo = instance->getAnimatedTransform()->eval(ray2.time);
+                    const Transform &trafo = instance->getAnimatedTransform()->eval(ray2.time);
                     trafo.inverse()(ray2_d, ray_temp);
 
                     //std::cout << "TRAFO" << trafo.toString() << std::endl;
@@ -566,33 +511,22 @@ public:
                             //std::cout << its.p1.toString() << std::endl;
                             //std::cout << its.p2.toString() << std::endl;
                         }
-                        Transform trafo1 = instance->getAnimatedTransform()->eval(ray.time);
+                        const Transform &trafo1 = instance->getAnimatedTransform()->eval(ray.time);
                         Point p0 = trafo1(its.p0);
                         Point p1 = trafo1(its.p1);
                         Point p2 = trafo1(its.p2);
                         Point pa0 = trafo(its.p0);
                         Point pa1 = trafo(its.p1);
                         Point pa2 = trafo(its.p2);
-
-                        edge_similarity[0] = its.edge_similarity[0];
-                        edge_similarity[1] = its.edge_similarity[1];
-                        edge_similarity[2] = its.edge_similarity[2];
-
+                        edge_continuous[0] = its.e0;
+                        edge_continuous[1] = its.e1;
+                        edge_continuous[2] = its.e2;
                         Vector e1 = p1 - p0;
                         Vector e2 = p2 - p0;
                         t_area = cross(e1, e2).length();
-                        Vector v_g = (p0 + p1 + p2) / 3 - its2.p;
-                        t_dist = (v_g).length();
-                        t_cos = dot(normalize(v_g), its.shFrame.n);
+                        t_dist = (its2.p - (p0 + p1 + p2) / 3).length();
+                        t_cos = dot(normalize(its2.p - (p0 + p1 + p2) / 3), its.shFrame.n);
                         t_cos = std::abs(t_cos);
-
-                        // local coordinate
-                        edge_continuous_at_view[0] = its.edge_continuous_at_view[0];
-                        edge_continuous_at_view[1] = its.edge_continuous_at_view[1];
-                        edge_continuous_at_view[2] = its.edge_continuous_at_view[2];
-
-                        BSDFSamplingRecord bRec2_temp(its2, its2.toLocal(normalize(v_g)), ERadiance);
-                        t_brdf = bsdf2->eval(bRec2_temp)[0];
                     }
                     //trafo.inverse()(_ray, ray);
                 } else {
@@ -656,23 +590,24 @@ public:
                 // }    
 
                 Float G2_d = 1.0;
-                // if(!(bRec2_d.sampledType & BSDF::EDelta)){
+                //if(!(bRec2_d.sampledType & BSDF::EDelta)){
                 if(!path2_blocked){
                     Float d_temp = next_its_d.t;//std::max(next_its_d.t, 1e-5);
-                    G2_d = std::abs(dot(next_its_d_temp.shFrame.n, ray2_d.d)/(d_temp * d_temp));
+                    G2_d = std::abs(dot(next_its_p.shFrame.n, ray2_d.d)/(d_temp * d_temp));
                 } else {
                     G2_d = 1.0;
                 }
 
                 // (3) Mixed
                 Intersection next_its_m = next_its_p;
+
                 
                 Float jacobian_m = 1.0;
                 Float weight_p = 0.0;
                 Float weight_p_prime = 0.0;
                 // Float m_k = (1 / (roughness + 1e-5) * 0.8 + 1);
 
-                Float solid_angle = t_area * t_cos / (t_dist * t_dist);
+                Float steradian = t_area * t_cos / (t_dist * t_dist);
                 // Float area = roughness * t_dist * t_dist / (t_cos);
                 // Float position_correlation_probability = 6.0f * area;
                 // position_correlation_probability = std::min(position_correlation_probability, 1.0);
@@ -680,12 +615,7 @@ public:
                 // m_k large --> more directional
                 // Float m_k = 1;//(t_area / (area + 1e-5) * 0.8 + 1);
                 // Float m_k = (steradian * roughness * 0.2 + 1);
-                Float m_k = (solid_angle / roughness * 0.2);
-                // m_k = std::min(m_k, 1.0);
-
-                // Float m_k = 1;
-
-                //std::cout << m_k << std::endl;
+                Float m_k = (steradian / roughness * 0.2);
                 // if(steradian < 0.01){
                 //     m_k = 0.0;
                 // }
@@ -734,8 +664,7 @@ public:
                     weight_p_prime = m_k * std::pow(m_x, m_k - 1);
 
                     Float jacobian_p_sqrt = 1;
-                    Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d)); 
-                    //Float jacobian_d_sqrt = std::abs(next_its_d.t / its.t);
+                    Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d));
                     
                     Float jacobian_m_1 = weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
                     Float jacobian_m_2 = weight_p_prime * (-2) * dot(m_direction, next_its_p.uv - next_its_d.uv) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
@@ -763,21 +692,19 @@ public:
                     Float m_x;
                     Vector m_direction;
                     int N = 3;
-                    Float continuous_threshold = std::min(roughness * 10, 1.0);
 
-                    if(edge_similarity[0] >= continuous_threshold){
-                        m_x_1 = 1000;
+                    if(edge_continuous[0]){
+                        m_x_1 = 100;
                         N -= 1;
                     }
-                    if(edge_similarity[1] >= continuous_threshold){
-                        m_x_2 = 1000;
+                    if(edge_continuous[1]){
+                        m_x_2 = 100;
                         N -= 1;
                     }
-                    if(edge_similarity[2] >= continuous_threshold){
-                        m_x_3 = 1000;
+                    if(edge_continuous[2]){
+                        m_x_3 = 100;
                         N -= 1;
                     }
-                    // printf("Continuous %f %f %f \n", edge_continuous[0], edge_continuous[1], edge_continuous[2]);
 
                     if((m_x_1 <= m_x_2) && (m_x_1 <= m_x_3)){
                         m_x = m_x_1;
@@ -792,21 +719,14 @@ public:
                         m_direction = Vector(0.0, 0.0, 1.0);
                     }
                     // std::cout << "N" << N << std::endl;
-                    // std::cout << m_k << std::endl;
-                
+
                     m_x = 1 - N * m_x;
                     m_x = std::abs(m_x);
-                    weight_p = std::pow(m_x, m_k);
-                    weight_p_prime = m_k * std::pow(m_x, m_k - 1);
-
-                    if(N == 0){
-                        weight_p = 0;
-                        weight_p_prime = 0;
-                    }
+                    weight_p = 0;//std::pow(m_x, m_k);
+                    weight_p_prime = 0;//m_k * std::pow(m_x, m_k - 1);
                     
                     Float jacobian_p_sqrt = 1;
-                    Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d)); 
-                    // Float jacobian_d_sqrt = std::abs(next_its_d.t / its.t); 
+                    Float jacobian_d_sqrt = std::sqrt(std::abs(G / G2_d));
                     
                     Float jacobian_m_1 = weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
                     Float jacobian_m_2 = weight_p_prime * (-N) * dot(m_direction, next_its_p.barycentric - next_its_d.barycentric) + weight_p * jacobian_p_sqrt + (1 - weight_p) * jacobian_d_sqrt;
@@ -814,7 +734,7 @@ public:
 
                     m_x_1 = next_its_p.barycentric[0] * weight_p + next_its_d.barycentric[0] * (1-weight_p);
                     m_x_2 = next_its_p.barycentric[1] * weight_p + next_its_d.barycentric[1] * (1-weight_p);
-                    m_x_3 =  next_its_p.barycentric[2] * weight_p + next_its_d.barycentric[2] * (1-weight_p);
+                    m_x_3 = next_its_p.barycentric[2] * weight_p + next_its_d.barycentric[2] * (1-weight_p);
 
                     // if(next_its_d_temp.isValid()){
                     //     // path2_blocked = true;
@@ -824,85 +744,59 @@ public:
                     if((m_x_1 > 1) || (m_x_1 < 0) || (m_x_2 > 1) || (m_x_2 < 0) || (m_x_3 < 0) || (m_x_3 > 1)){
                         mesh_hit_preserved = false;
                     }
-
-                    if(!mesh_hit_preserved){
-                       // printf("NOT PRESERVED!!\n");
-                    }
                 }
+                //weight_p = 1.0;
+                //weight_p_prime = 0.0;
+                //jacobian_m = 1.0;
 
+                // rectangle
                 
+                // Triangle
+                // Point p0 = its.p0;
+                // Point p1 = its.p1;
+                // Point p2 = its.p2;
 
+                // Point p0 = its.p0;
+                // Point p1 = its.p1;
+                // Point p2 = its.p2;
+                
+                // Point pg = (p0 + p1 + p2) / 3.0;
+                // Triangle::rayIntersect(p0, p1, pg);
                 if(!path2_blocked){
                     if(!(bRec2_d.sampledType & BSDF::EDelta)){
+                    //if(true){
                         next_its_m.p = weight_p * next_its_p.p + (1 - weight_p) * next_its_d.p;
                         next_its_m.t = (next_its_m.p - its2.p).length();
-
-                        //printPoint(next_its_m.p, next_its_d.p);
-                        //printf("T1 : %f, T2: %f\n", next_its_d.t, next_its_m.t);
-
-                        //next_its_m = next_its_d;
+                        //next_its_m = next_its_p;
                         const Vector wo2_m = normalize(next_its_m.p - its2.p);
                         ray2 = Ray(its2.p, wo2_m, ray2.time);
-                        // mesh_hit_preserved = false;
+                        mesh_hit_preserved = false;
                         if(mesh_hit_preserved){
+                            ray2.maxt = next_its_m.t - 1e-2;
+                            ray2.mint = Epsilon;
                             
                             Intersection next_its_m_temp;
-                            scene->rayIntersect(ray2, next_its_m_temp);
-
-                            if(std::abs(next_its_m_temp.t - next_its_m.t) < 0.01){
-                            //if(check_consistency(its, next_its_m)){
-                                next_its_m = next_its_m_temp;
-
+                            path2_blocked |= scene->rayIntersect(ray2, next_its_m_temp);
+                            if(!path2_blocked){
                                 BSDFSamplingRecord bRec2_m(its2, its2.toLocal(wo2_m), ERadiance);
                                 bsdfVal2 = bsdf2->eval(bRec2_m);
                                 bsdfPdf2 = bsdf2->pdf(bRec2_m);
-                                
-                                G2 = std::abs(dot(next_its_m.shFrame.n, ray2.d)) / (next_its_m.t * next_its_m.t);
-                                // jacobian_m = G / G2;
-
-                                // jacobian_m *= std::abs(dot(its.shFrame.n, ray.d)) / std::abs(dot(next_its_m.shFrame.n, ray2.d));
-
-                                // * jacobian_m;// std::abs(dot(next_its_m.shFrame.n, ray2.d))
-                                
-                                
-                                // Float G2_dist = 1 / (next_its_m.t * next_its_m.t);
-                                
-                                // jacobian_m = G / G2;
-
-                                //printf("J old : %f, new %f\n", jacobian_m, G / G2);
-                                // if(std::abs(jacobian_m - (G/G2)) > 0.01){
-                                //     printf("T1 : %f, T2: %f\n", next_its_d.t, next_its_m.t);
-                                //     printf("Va : %f, Vb %f\n", G, G2);
-                                //     printf("AJ old : %f, new %f\n", jacobian_m, G / G2);
-                                //     printf("BJ old : %f, new %f\n", jacobian_m, G_dist / G2_dist);
-                                    
-                                //     printVector(its.shFrame.n, next_its_m.shFrame.n);
-                                //     printVector(ray.d, ray2.d);
-                                //     printPoint(its.p, next_its_m.p);
-                                // }
-                            } else {
-                                path2_blocked = true;
                             }
                         } else {
-                            Float G_temp = std::abs(dot(its.shFrame.n, ray.d)) / (next_its_m.t * next_its_m.t);
-
-                            //Intersection next_its_m_temp;
-                            scene->rayIntersect(ray2, next_its_m);
-                            if(check_consistency(its, next_its_m)){
+                            
+                            Intersection next_its_m_temp;
+                            scene->rayIntersect(ray2, next_its_m_temp);
+                            if(check_consistency(its, next_its_m_temp)){
                             //if(next_its_m_temp.isValid()){
                                 BSDFSamplingRecord bRec2_m(its2, its2.toLocal(wo2_m), ERadiance);
                                 bsdfVal2 = bsdf2->eval(bRec2_m);
                                 bsdfPdf2 = bsdf2->pdf(bRec2_m);
-                                G2 = std::abs(dot(next_its_m.shFrame.n, ray2.d)) / (next_its_m.t * next_its_m.t);
-                                // jacobian_m *= G_temp / G2;
-
-                                jacobian_m *= G2_d / G2;
-                                // jacobian_m = G / G2;
+                                
 
                             } else {
                                 path2_blocked = true;
                             }
-                            //next_its_m = next_its_m_temp;
+                            next_its_m = next_its_m_temp;
                         }
                         
                         // next_its_m = next_its_m_temp;
@@ -914,13 +808,19 @@ public:
                         bsdfVal2 = bsdfWeight_d;
                         bsdfPdf2 = 1.0;
                     }
-                    
+                    if(!path2_blocked){
+                        G2 = std::abs(dot(next_its_m.shFrame.n, ray2.d)) / (next_its_m.t * next_its_m.t);
+                    }
+                    jacobian_m = G / G2;
+
+
                     path_length2 += next_its_m.t;
-                    its2 = next_its_m;
+                    its2 = next_its_m;  
                     
                 } else {
                     G2 = 1.0;
                 }
+                
                 
                 // path_pdf_1_as_1_nee = path_pdf_1_as_1 * lumPdf * G;
                 path_pdf_1_as_2_nee = path_pdf_1_as_2 * lumPdf2 * G2 * jacobian_m;
@@ -943,21 +843,8 @@ public:
                 /////////////////////////////////////////////////////////
                 // (0) Calculate correlation strategy probability
                 /////////////////////////////////////////////////////////
-                Float phong_specularity = 2 / (roughness * roughness) - 2;
-                phong_specularity = std::max(phong_specularity, 0.0);
-                Float effective_r = (2 * 3.141592) / (phong_specularity + 1.0);
-                //std::pow(roughness * 10.0, 3) 
-                Float area = effective_r * effective_r * std::pow(reflected_dist, 2) / ((reflected_cos_o + 1e-5) / (reflected_cos_i));
-                Float denom = std::pow(mirrorHitSmoothness, 5);
-                // Float denom = (mirrorHitSmoothness - 0.2) / (0.5-0.2);
-                // denom = std::max(std::min(denom, 1.0), 1e-5);
-                denom = 1 / denom;
-                // return Spectrum(mirrorHitSmoothness);
-
-                // denom = mirrorHitSmoothness;
-                // denom = std::pow(denom, 2);
-                
-                Float position_correlation_probability = 100 * area;// * denom;//std::pow(mirrorHitSmoothness + 1e-5, 1);
+                Float area = roughness * reflected_dist * reflected_dist / (reflected_cos_o);
+                Float position_correlation_probability = 6.0f * area;
                 position_correlation_probability = std::min(position_correlation_probability, 1.0);
 
                 bool force_position = (strcmp(m_antithetic_sampling_mode.c_str(), "position") == 0);
@@ -1281,47 +1168,24 @@ public:
                 }
             }
 
-            // Float mis_position = miWeight(path_pdf_2_as_2, path_pdf_2_as_3, 1);
-            // Float mis_direction = miWeight(path_pdf_3_as_3, path_pdf_3_as_2, 1);
+            Float mis_position = miWeight(path_pdf_2_as_2, path_pdf_2_as_3);
+            Float mis_direction = miWeight(path_pdf_3_as_3, path_pdf_3_as_2);
 
-            // //printf("PDF path_pdf_2_as_2 %f, path_pdf_2_as_3 %f \n", path_pdf_2_as_2, path_pdf_2_as_3);
-            // //printf("PDF path_pdf_3_as_3 %f, path_pdf_3_as_2 %f \n", path_pdf_3_as_3, path_pdf_3_as_2);
+            //printf("PDF path_pdf_2_as_2 %f, path_pdf_2_as_3 %f \n", path_pdf_2_as_2, path_pdf_2_as_3);
+            //printf("PDF path_pdf_3_as_3 %f, path_pdf_3_as_2 %f \n", path_pdf_3_as_3, path_pdf_3_as_2);
             
-            // //printf("MIS WEIGHT w_p : %f, w_d : %f, sum : %f \n", mis_position, mis_direction, mis_position + mis_direction);
+            //printf("MIS WEIGHT w_p : %f, w_d : %f, sum : %f \n", mis_position, mis_direction, mis_position + mis_direction);
 
-            // if(m_preserve_primal_mis_weight_to_one){
-            //     // Li += 0.5f * neePathThroughput1 / path_pdf_1_as_1;
-            //     Li += 0.5f * neePathThroughput1 / path_pdf_1_as_1 * miWeight(path_pdf_1_as_1, path_pdf_1_as_2, 1);
-            //     Li += 0.5f * neePathThroughput1 / path_pdf_1_as_1 * miWeight(path_pdf_1_as_1, path_pdf_1_as_3, 1);
-            // } else {
-            //     Li += 0.5f * mis_position * neePathThroughput1 / path_pdf_1_as_1;// * miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, 0);
-            //     Li += 0.5f * mis_direction * neePathThroughput1 / path_pdf_1_as_1;// * miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, 0);
-            // }
-            
-            // //Li += 0.5f * mis_position * neePathThroughput2 / path_pdf_2_as_2;// * miWeight3(path_pdf_2_as_2, path_pdf_2_as_1, 0);
-            // //Li += 0.5f * mis_direction * neePathThroughput3 / path_pdf_3_as_3;// * miWeight3(path_pdf_3_as_3, path_pdf_3_as_1, 0);
-            
-            // Li += mis_position * neePathThroughput2 / path_pdf_2_as_2 * miWeight(path_pdf_2_as_2, path_pdf_2_as_1, 1);
-            // Li += mis_direction * neePathThroughput3 / path_pdf_3_as_3 * miWeight(path_pdf_3_as_3, path_pdf_3_as_1, 1);
-
-            if(strcmp(m_mis_method.c_str(), "mis_all") == 0){
-                Li += miWeight4(path_pdf_1_as_1, path_pdf_1_as_1, path_pdf_1_as_2, path_pdf_1_as_3) * neePathThroughput1 / path_pdf_1_as_1;
-                Li += miWeight4(path_pdf_1_as_1, path_pdf_1_as_1, path_pdf_1_as_2, path_pdf_1_as_3) * neePathThroughput1 / path_pdf_1_as_1;
-                Li += miWeight4(path_pdf_2_as_2, path_pdf_2_as_1, path_pdf_2_as_1, path_pdf_2_as_3) * neePathThroughput2 / path_pdf_2_as_2;
-                Li += miWeight4(path_pdf_3_as_3, path_pdf_3_as_1, path_pdf_3_as_1, path_pdf_3_as_2) * neePathThroughput3 / path_pdf_3_as_3;
-            } else if(strcmp(m_mis_method.c_str(), "mis_separate") == 0){
-                Li += 0.5 * miWeight(path_pdf_1_as_1, path_pdf_1_as_2) * neePathThroughput1 / path_pdf_1_as_1;
-                Li += 0.5 * miWeight(path_pdf_1_as_1, path_pdf_1_as_3) * neePathThroughput1 / path_pdf_1_as_1;
-                Li += miWeight(path_pdf_2_as_2, path_pdf_2_as_3) * miWeight(path_pdf_2_as_2, path_pdf_2_as_1) * neePathThroughput2 / path_pdf_2_as_2;
-                Li += miWeight(path_pdf_3_as_3, path_pdf_3_as_2) * miWeight(path_pdf_3_as_3, path_pdf_3_as_1) * neePathThroughput3 / path_pdf_3_as_3;
-            } else if(strcmp(m_mis_method.c_str(), "mis_separate2") == 0){
-                Li += miWeight(path_pdf_2_as_2, path_pdf_2_as_3) * miWeight(path_pdf_1_as_1, path_pdf_1_as_2) * neePathThroughput1 / path_pdf_1_as_1;
-                Li += miWeight(path_pdf_3_as_3, path_pdf_3_as_2) * miWeight(path_pdf_1_as_1, path_pdf_1_as_3) * neePathThroughput1 / path_pdf_1_as_1;
-                Li += miWeight(path_pdf_2_as_2, path_pdf_2_as_3) * miWeight(path_pdf_2_as_2, path_pdf_2_as_1) * neePathThroughput2 / path_pdf_2_as_2;
-                Li += miWeight(path_pdf_3_as_3, path_pdf_3_as_2) * miWeight(path_pdf_3_as_3, path_pdf_3_as_1) * neePathThroughput3 / path_pdf_3_as_3;
+            if(m_preserve_primal_mis_weight_to_one){
+                Li += 0.5f * neePathThroughput1 / path_pdf_1_as_1;
+            } else {
+                Li += 0.5f * mis_position * neePathThroughput1 / path_pdf_1_as_1;// * miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, 0);
+                Li += 0.5f * mis_direction * neePathThroughput1 / path_pdf_1_as_1;// * miWeight3(path_pdf_1_as_1, path_pdf_1_as_2, 0);
             }
-
             
+            Li += 0.5f * mis_position * neePathThroughput2 / path_pdf_2_as_2;// * miWeight3(path_pdf_2_as_2, path_pdf_2_as_1, 0);
+            Li += 0.5f * mis_direction * neePathThroughput3 / path_pdf_3_as_3;// * miWeight3(path_pdf_3_as_3, path_pdf_3_as_1, 0);
+
             if(rRec.depth + 1>=m_maxDepth){
                 break;
             }
@@ -1499,24 +1363,35 @@ public:
         return Li_helper(r, rRec, ray2_time);
     }
 
-    inline Float miWeight(Float pdfA, Float pdfB, float power=1) const {
+    inline Float miWeight(Float pdfA, Float pdfB) const {
         if(pdfA + pdfB == 0.0f){
             return 0.0f;
         }
-        float ap = std::pow(pdfA, power);
-        float bp = std::pow(pdfB, power);
-        return ap / (ap + bp);
+        pdfA *= pdfA;
+        pdfB *= pdfB;
+        return pdfA / (pdfA + pdfB);
     }
 
-    inline Float miWeight4(Float pdfA, Float pdfB, Float pdfC, Float pdfD, float power=1) const {
-        if(pdfA + pdfB +pdfC + pdfD == 0.0f){
+    inline Float miWeight3(Float pdfA, Float pdfB, Float pdfC) const {
+        if(pdfA + pdfB + pdfC == 0.0f){
             return 0.0f;
         }
-        float ap = std::pow(pdfA, power);
-        float bp = std::pow(pdfB, power);
-        float cp = std::pow(pdfC, power);
-        float dp = std::pow(pdfD, power);
-        return ap / (ap + bp + cp + dp);
+        //pdfA *= pdfA;
+        //pdfB *= pdfB;
+        //pdfC *= pdfC;
+        //pdfD *= pdfD;
+        return pdfA / (pdfA + pdfB + pdfC);
+    }
+
+    inline Float miWeight4(Float pdfA, Float pdfB, Float pdfC, Float pdfD) const {
+        if(pdfA + pdfB + pdfC +pdfD == 0.0f){
+            return 0.0f;
+        }
+        //pdfA *= pdfA;
+        //pdfB *= pdfB;
+        //pdfC *= pdfC;
+        //pdfD *= pdfD;
+        return pdfA / (pdfA + pdfB + pdfC + pdfD);
     }
 
     void serialize(Stream *stream, InstanceManager *manager) const {
@@ -1551,7 +1426,6 @@ private:
     bool m_correlate_time_samples;
     bool m_antithetic_sampling_by_shift;
     bool m_preserve_primal_mis_weight_to_one;
-    std::string m_mis_method;
     std::string m_antithetic_sampling_mode;
 };
 
