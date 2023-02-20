@@ -293,6 +293,22 @@ public:
         return F * model;
     }
 
+    Point2 get_sample_from_direction(const BSDFSamplingRecord &bRec) const{
+        /* Calculate the reflection half-vector */
+        Vector H = normalize(bRec.wo+bRec.wi);
+
+        /* Construct the microfacet distribution matching the
+           roughness values at the current surface position. */
+        MicrofacetDistribution distr(
+            m_type,
+            m_alphaU->eval(bRec.its).average(),
+            m_alphaV->eval(bRec.its).average(),
+            m_sampleVisible
+        );
+
+        return distr.get_sample_from_direction(bRec.wi, H);
+    }
+
     Float pdf(const BSDFSamplingRecord &bRec, EMeasure measure) const {
         if (measure != ESolidAngle ||
             Frame::cosTheta(bRec.wi) <= 0 ||

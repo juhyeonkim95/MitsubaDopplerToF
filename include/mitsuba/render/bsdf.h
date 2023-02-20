@@ -495,6 +495,8 @@ public:
     /// Set the parent object
     virtual void setParent(ConfigurableObject *parent);
 
+    virtual Point2 get_sample_from_direction(const BSDFSamplingRecord &bRec) const;
+
     //! @}
     // =============================================================
 

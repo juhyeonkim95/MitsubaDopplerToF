@@ -149,6 +149,10 @@ public:
         return m_reflectance->eval(bRec.its);
     }
 
+    Point2 get_sample_from_direction(const BSDFSamplingRecord &bRec) const{
+        return warp::cosineHemisphereToSquare(bRec.wo);
+    }
+
     void addChild(const std::string &name, ConfigurableObject *child) {
         if (child->getClass()->derivesFrom(MTS_CLASS(Texture))
                 && (name == "reflectance" || name == "diffuseReflectance")) {

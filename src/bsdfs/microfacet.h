@@ -249,6 +249,50 @@ public:
     }
 
     /**
+     * \brief Wrapper function which calls \ref pdfAll() or \ref pdfVisible()
+     * depending on the parameters of this class
+     */
+    inline Point2 get_sample_from_direction(const Vector &wi, const Vector &m) const {
+        if (m_sampleVisible)
+            return get_sample_from_direction_Visible(wi, m);
+        else
+            return get_sample_from_direction_All(m);
+    }
+
+    inline Point2 get_sample_from_direction_Visible(const Vector &wi, const Vector &m) const {
+        // NotImplementedError("get_sample_from_direction_Visible");
+        printf("Not Implemented! \n");
+        return Point2(0, 0);
+    }
+
+    inline Point2 get_sample_from_direction_All(const Vector &m) const {
+        Float cos_theta_m = m.z;
+        Float tan_theta_m_sq = 1 / (cos_theta_m * cos_theta_m) - 1;
+        Float phi = std::atan2(m.y, m.x);
+        Float r2 = phi / (2 * M_PI);
+        Float r1;
+        Float alphaSqr;
+
+        switch (m_type) {
+            case EBeckmann: {
+                /* Sample theta component */
+                alphaSqr = m_alphaU * m_alphaU;
+                r1 = 1 - std::exp(- tan_theta_m_sq / alphaSqr);
+            } break;
+            case EGGX: {
+                alphaSqr = m_alphaU * m_alphaU;
+                r1 = 1 - 1 / (1 + tan_theta_m_sq / alphaSqr);
+            } break;
+            case EPhong: {
+                r1 = std::pow(cos_theta_m, m_exponentU + 2);
+            } break;
+        }
+        return Point2(r1, r2);
+    }
+
+
+
+    /**
      * \brief Wrapper function which calls \ref sampleAll() or \ref sampleVisible()
      * depending on the parameters of this class
      */

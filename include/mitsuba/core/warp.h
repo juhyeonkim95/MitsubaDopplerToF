@@ -51,6 +51,10 @@ namespace warp {
     /// Sample a cosine-weighted vector on the unit hemisphere with respect to solid angles
     extern MTS_EXPORT_CORE Vector squareToCosineHemisphere(const Point2 &sample);
 
+    /// Inverse of squareToCosineHemisphere
+    extern MTS_EXPORT_CORE Point2 cosineHemisphereToSquare(const Vector &v);
+
+
     /// Density of \ref squareToCosineHemisphere() with respect to solid angles
     extern MTS_EXPORT_CORE inline Float squareToCosineHemispherePdf(const Vector &d)
         { return INV_PI * Frame::cosTheta(d); }

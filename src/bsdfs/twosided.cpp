@@ -133,6 +133,20 @@ public:
         }
     }
 
+    Point2 get_sample_from_direction(const BSDFSamplingRecord &bRec) const{
+        BSDFSamplingRecord b(bRec);
+
+        if (b.wi.z > 0) {
+            return m_nestedBRDF[0]->get_sample_from_direction(b);
+        } else {
+            if (b.component != -1)
+                b.component -= m_nestedBRDF[0]->getComponentCount();
+            b.wi.z *= -1;
+            b.wo.z *= -1;
+            return m_nestedBRDF[1]->get_sample_from_direction(b);
+        }
+    }
+
     Spectrum sample(BSDFSamplingRecord &bRec, const Point2 &sample) const {
         bool flipped = false;
 
