@@ -123,6 +123,7 @@ public:
         m_sensor_modulation_scale = props.getFloat("f_1", 0.5f);
         m_sensor_modulation_offset = props.getFloat("f_0", 0.5f);
         m_sensor_modulation_phase_offset = props.getFloat("f_phase_offset", 0.0f);
+        m_antithetic_shift = props.getFloat("antitheticShift", 0.5f);
 
         m_low_frequency_component_only = props.getBoolean("low_frequency_component_only", false);
         m_is_objects_transformed_for_time = props.getBoolean("is_object_transformed_for_time", false);
@@ -145,12 +146,12 @@ public:
         Float phi = (2 * M_PI * m_illumination_modulation_frequency_mhz) / 300 * path_length;
 
         if(m_low_frequency_component_only){
-            Float fg_t = 0.25 * std::cos(w_d * ray_time + phi);
+            Float fg_t = 0.25 * std::cos(w_d * ray_time + m_sensor_modulation_phase_offset + phi);
             return fg_t;
         } 
         
         Float g_t = 0.5 * std::cos(w_g * ray_time - phi) + 0.5;
-        Float f_t = std::cos(w_f * ray_time);
+        Float f_t = std::cos(w_f * ray_time + m_sensor_modulation_phase_offset);
         return f_t * g_t;
     }
 
@@ -743,7 +744,8 @@ public:
     Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const
     {
         // antithetic time setting
-        Float ray2_time = r.time + 0.5f * m_time;
+        Float ray2_time = r.time + m_antithetic_shift * m_time;
+
         if(ray2_time >= m_time){
             ray2_time -= m_time;
         }
@@ -786,6 +788,7 @@ private:
     Float m_sensor_modulation_offset;
     Float m_sensor_modulation_phase_offset;
     Float m_time;
+    Float m_antithetic_shift;
     
     bool m_low_frequency_component_only;
     bool m_is_objects_transformed_for_time;

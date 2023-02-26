@@ -136,12 +136,12 @@ public:
         Float phi = (2 * M_PI * m_illumination_modulation_frequency_mhz) / 300 * path_length;
 
         if(m_low_frequency_component_only){
-            Float fg_t = 0.25 * std::cos((w_f - w_g) * ray_time + phi);
+            Float fg_t = 0.25 * std::cos((w_f - w_g) * ray_time + m_sensor_modulation_phase_offset + phi);
             return fg_t;
         } 
         
         Float g_t = 0.5 * std::cos(w_g * ray_time - phi) + 0.5;
-        Float f_t = std::cos(w_f * ray_time);
+        Float f_t = std::cos(w_f * ray_time + m_sensor_modulation_phase_offset);
         return f_t * g_t;
     }
 

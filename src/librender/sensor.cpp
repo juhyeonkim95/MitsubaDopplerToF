@@ -42,6 +42,7 @@ Sensor::Sensor(const Properties &props)
     m_usePixelCorrelation = props.getBoolean("usePixelCorrelation", false);
     m_useSamplerCorrelation = props.getBoolean("useSamplerCorrelation", false);
     m_antitheticSamplingByShift = props.getBoolean("antitheticSamplingByShift", true);
+    m_antitheticShift = props.getFloat("antitheticShift", 0.5f);
 
     m_useSameTimeSamplesOverPathSpace = props.getBoolean("useSameTimeSamplesOverPathSpace", false);
     m_timeSampleCount = props.getInteger("timeSampleCount", 0);

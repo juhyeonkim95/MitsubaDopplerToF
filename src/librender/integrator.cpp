@@ -160,6 +160,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
     bool usePixelCorrelation = sensor->usePixelCorrelation();
     bool useSamplerCorrelation = sensor->useSamplerCorrelation();
     bool isAntitheticSamplingByShift = sensor->isAntitheticSamplingByShift();
+    float antitheticShift = sensor->getAntitheticShift();
     
     Float previousTimeSample = 0.0f;
     Point2 previousSamplePos;
@@ -182,7 +183,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             if(useAntitheticSampling){
                 if(j%2 == 1){
                     if(isAntitheticSamplingByShift){
-                        timeSample = 0.5f + previousTimeSample;
+                        timeSample = antitheticShift + previousTimeSample;
                         if(timeSample > 1.0f){
                             timeSample -= 1.0f;
                         }
