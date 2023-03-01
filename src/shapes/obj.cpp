@@ -709,75 +709,77 @@ public:
             triangleArray[i] = tri;
         }
 
-        for(const auto& elem : edgeDictionary)
-        {
+        // TODO : uncomment?
+        
+        // for(const auto& elem : edgeDictionary)
+        // {
             
-            if(elem.second.size() > 1){
-                int tri1_idx = elem.second[0].first;
-                int tri2_idx = elem.second[1].first;
-                Triangle *tri1 = &triangleArray[tri1_idx];
-                Triangle *tri2 = &triangleArray[tri2_idx];
+        //     if(elem.second.size() > 1){
+        //         int tri1_idx = elem.second[0].first;
+        //         int tri2_idx = elem.second[1].first;
+        //         Triangle *tri1 = &triangleArray[tri1_idx];
+        //         Triangle *tri2 = &triangleArray[tri2_idx];
                 
-                int tri1_edge_idx = elem.second[0].second;
-                int tri2_edge_idx = elem.second[1].second;
+        //         int tri1_edge_idx = elem.second[0].second;
+        //         int tri2_edge_idx = elem.second[1].second;
 
-                int normal_idx1 = triangles[tri1_idx].n[tri1_edge_idx] - 1;
-                int normal_idx2 = triangles[tri2_idx].n[tri2_edge_idx] - 1;
+        //         int normal_idx1 = triangles[tri1_idx].n[tri1_edge_idx] - 1;
+        //         int normal_idx2 = triangles[tri2_idx].n[tri2_edge_idx] - 1;
 
-                float tri_similarity = dot(normals[normal_idx1], normals[normal_idx2]);
-                tri1->face_similarity[tri1_edge_idx] = tri_similarity;
-                tri2->face_similarity[tri2_edge_idx] = tri_similarity;
-                tri1->neighbor_centers[tri1_edge_idx] = tri2->center;
-                tri2->neighbor_centers[tri2_edge_idx] = tri1->center;
-                tri1->neighbor_normals[tri1_edge_idx] = tri2->normal;
-                tri2->neighbor_normals[tri2_edge_idx] = tri1->normal;
+        //         float tri_similarity = dot(normals[normal_idx1], normals[normal_idx2]);
+        //         tri1->face_similarity[tri1_edge_idx] = tri_similarity;
+        //         tri2->face_similarity[tri2_edge_idx] = tri_similarity;
+        //         tri1->neighbor_centers[tri1_edge_idx] = tri2->center;
+        //         tri2->neighbor_centers[tri2_edge_idx] = tri1->center;
+        //         tri1->neighbor_normals[tri1_edge_idx] = tri2->normal;
+        //         tri2->neighbor_normals[tri2_edge_idx] = tri1->normal;
 
-                tri1->neighbors[tri1_edge_idx] = tri2;
-                tri2->neighbors[tri2_edge_idx] = tri1;
-            }
-        }
+        //         tri1->neighbors[tri1_edge_idx] = tri2;
+        //         tri2->neighbors[tri2_edge_idx] = tri1;
+        //     }
+        // }
 
-        for(int i=0; i < triangles.size(); i++){
-            Triangle *tri = &triangleArray[i];
-            std::queue<Triangle*> neighbors;
-            bool visited_array[triangles.size()] = {0};
-            neighbors.push(tri);
-            visited_array[tri->arrayIndex] = true;
-            float similarity1=0.0;
-            float similarity2=0.0;
-            float neighbor_weights = 0.0;
-            int neighbor_count = 0;
-            float continuous_area = 0;
-            while(!neighbors.empty()){
-                Triangle *nTri = neighbors.front();
-                neighbors.pop();
+        // for(int i=0; i < triangles.size(); i++){
+        //     Triangle *tri = &triangleArray[i];
+        //     std::queue<Triangle*> neighbors;
+        //     bool visited_array[triangles.size()] = {0};
+        //     neighbors.push(tri);
+        //     visited_array[tri->arrayIndex] = true;
+        //     float similarity1=0.0;
+        //     float similarity2=0.0;
+        //     float neighbor_weights = 0.0;
+        //     int neighbor_count = 0;
+        //     float continuous_area = 0;
+        //     while(!neighbors.empty()){
+        //         Triangle *nTri = neighbors.front();
+        //         neighbors.pop();
 
-                float distance = (tri->center - nTri->center).length();
-                float attenuation = std::exp(-5.0 * distance);
-                float v = 0.5 + 0.5 * dot(tri->normal, nTri->normal);
-                if(v > 0.9){
-                    continuous_area += tri->area;
-                }
-                v = std::pow(v, 5);
-                similarity2 += attenuation * v * v;
-                similarity1 += attenuation * v;
+        //         float distance = (tri->center - nTri->center).length();
+        //         float attenuation = std::exp(-5.0 * distance);
+        //         float v = 0.5 + 0.5 * dot(tri->normal, nTri->normal);
+        //         if(v > 0.9){
+        //             continuous_area += tri->area;
+        //         }
+        //         v = std::pow(v, 5);
+        //         similarity2 += attenuation * v * v;
+        //         similarity1 += attenuation * v;
 
-                neighbor_weights += attenuation;
-                neighbor_count += 1;
-                if(distance < 10){
-                    for(int j=0; j<3; j++){
-                        if(nTri->neighbors[j] != nullptr && !(visited_array[nTri->neighbors[j]->arrayIndex])){
-                            neighbors.push(nTri->neighbors[j]);
-                            visited_array[nTri->neighbors[j]->arrayIndex] = true;
-                        }
-                    }
-                }
-            }
-            float mean = similarity1 / neighbor_weights;
-            float variance = similarity2 / neighbor_weights - mean * mean;
-            tri->smoothness = mean;//1.0 / variance;
-            //std::cout << "smoothness : " << tri->smoothness << ", Neighbors :" << neighbor_count << std::endl;
-        }
+        //         neighbor_weights += attenuation;
+        //         neighbor_count += 1;
+        //         if(distance < 10){
+        //             for(int j=0; j<3; j++){
+        //                 if(nTri->neighbors[j] != nullptr && !(visited_array[nTri->neighbors[j]->arrayIndex])){
+        //                     neighbors.push(nTri->neighbors[j]);
+        //                     visited_array[nTri->neighbors[j]->arrayIndex] = true;
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     float mean = similarity1 / neighbor_weights;
+        //     float variance = similarity2 / neighbor_weights - mean * mean;
+        //     tri->smoothness = mean;//1.0 / variance;
+        //     //std::cout << "smoothness : " << tri->smoothness << ", Neighbors :" << neighbor_count << std::endl;
+        // }
 
 
         ref<TriMesh> mesh = new TriMesh(name,

@@ -8,6 +8,7 @@ using namespace mitsuba;
 class PathTracePart
 {
 public:
+    PathTracePart() = default;
 
     PathTracePart(Ray& ray, RadianceQueryRecord& rRec, int index) 
         : ray(ray), rRec(rRec), index(index), its(rRec.its){
@@ -36,8 +37,10 @@ public:
         scene = rRec.scene;
         eta = 1.0;
         scattered = false;
-        path_terminated = false;
+        path_terminated = !its.isValid();
     }
+
+     PathTracePart& operator=(const PathTracePart& copy) = default;
 
     inline void set_path_pdf_as(PathTracePart& other, Float pdf){
         m_path_pdf_as[other.index] *= pdf;
@@ -77,8 +80,8 @@ public:
     Float mis_weight_nee;
     Spectrum path_throughput_nee;
     Spectrum path_throughput;
-    RadianceQueryRecord &rRec;
-    Intersection &its;
+    RadianceQueryRecord rRec;
+    Intersection its;
     Intersection next_its;
     DirectSamplingRecord dRec;
     Float path_length;
@@ -88,7 +91,7 @@ public:
     bool m_hideEmitters;
     bool path_terminated;
     bool scattered;
-    const Scene * scene;
+    const Scene *scene;
     Float eta;
     Float G;
     bool hitEmitter;
@@ -230,6 +233,7 @@ public:
         path2.set_path_pdf_as(path1, path2.bsdfPdf * path2.G);
         path2.set_path_pdf_as(path2, path1.bsdfPdf * path1.G / jacobian);
     }
+
 
     static void calculate_bsdf_pdf_as_other(PathTracePart &path1, PathTracePart &path2, PathTracePart &path3, Float jacobian){
         path1.set_path_pdf_as_nee(path1, path1.lumPdf * path1.G);

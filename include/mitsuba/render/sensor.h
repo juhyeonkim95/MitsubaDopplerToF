@@ -356,8 +356,11 @@ public:
     /// Return the m_useAntitheticSampling
     inline bool isAntitheticSamplingByShift() const { return m_antitheticSamplingByShift; }
 
-    /// Return the m_useAntitheticSampling
+    /// Return the m_antitheticShift
     inline float getAntitheticShift() const { return m_antitheticShift; }
+
+    /// Return the m_antitheticShifts
+    inline std::vector<float> getAntitheticShifts() const { return m_antitheticShifts; }
 
     /// Serialize this sensor to a binary data stream
     virtual void serialize(Stream *stream, InstanceManager *manager) const;
@@ -409,6 +412,7 @@ protected:
     bool m_useSamplerCorrelation;
     bool m_antitheticSamplingByShift;
     float m_antitheticShift;
+    std::vector<float> m_antitheticShifts;
 };
 
 /**
