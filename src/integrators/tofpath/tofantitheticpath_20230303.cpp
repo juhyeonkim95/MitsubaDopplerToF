@@ -137,8 +137,6 @@ public:
         m_mis_method = props.getString("misMethod", "mix_all");
 
         m_antithetic_sampling_mode = props.getString("antitheticSamplingMode", "position");
-
-        m_primal_antithetic_mis_power = props.getFloat("primalAntitheticMISPower", 0.0f);
     }
 
     /// Unserialize from a binary data stream
@@ -166,7 +164,7 @@ public:
             // Primal, antithetic MIS
             Float p11 = path1.path_pdf_as(path1);
             Float p12 = path1.path_pdf_as(path2);
-            Float mis_primal_antithetic = miWeight(p11, p12, m_primal_antithetic_mis_power);
+            Float mis_primal_antithetic = miWeight(p11, p12);
 
             // NEE, next ray (bsdf / positional corr / sampler corr) MIS
             Float p_nee = path1.path_pdf_nee_as_nee;
@@ -175,7 +173,7 @@ public:
 
             Float path_pdf = p11 * p_nee;
             Float modulation = evalModulationWeight(path1.ray.time, path1.em_path_length);
-            return modulation * path1.path_throughput_nee * path1.neeEmitterValue / path_pdf * mis_primal_antithetic * mis_nee_next_ray;
+            return modulation * path1.path_throughput_nee / path_pdf * mis_primal_antithetic * mis_nee_next_ray;
         }
         return Spectrum(0.0);
     }
@@ -185,14 +183,14 @@ public:
             // Primal, antithetic MIS
             Float p11 = path1.path_pdf_as(path1);
             Float p12 = path1.path_pdf_as(path2);
-            Float mis_primal_antithetic = miWeight(p11, p12, m_primal_antithetic_mis_power);
+            Float mis_primal_antithetic = miWeight(p11, p12);
 
             // NEE, next ray (bsdf / positional corr / sampler corr) MIS
             Float p_nee = path1.path_pdf_next_ray_as_nee;
             Float p_next_ray = path1.path_pdf_next_ray_as_next_ray;
             Float mis_nee_next_ray = miWeight(p_next_ray, p_nee, 2);
 
-            Float path_pdf = p11;
+            Float path_pdf = p11 * p_next_ray;
             Float modulation = evalModulationWeight(path1.ray.time, path1.path_length);
             return modulation * path1.path_throughput * path1.hitEmitterValue / path_pdf * mis_primal_antithetic * mis_nee_next_ray;
         }
@@ -394,7 +392,7 @@ public:
     }
 
 
-    Spectrum Li_helper(const RayDifferential &r, RadianceQueryRecord &rRec, Float ray2_timeSample) const {
+    Spectrum Li_helper(const RayDifferential &r, RadianceQueryRecord &rRec, Float ray2_time) const {
         /* Some aliases and local variables */
         const Scene *scene = rRec.scene;
         Spectrum Li(0.0f);
@@ -406,14 +404,11 @@ public:
         PathTracePart path1(ray1, rRec, 0);
 
         // path 2
-        RayDifferential ray2;
-        rRec.scene->getSensor()->sampleRayDifferential(
-            ray2, rRec.samplePos, rRec.apertureSample, std::fmod(rRec.timeSample + ray2_timeSample, 1.0));
-        ray2.scaleDifferential(rRec.diffScaleFactor);
+        RayDifferential ray2(r);
+        ray2.time = ray2_time;
         rRec2.rayIntersect(ray2);
         PathTracePart path2(ray2, rRec2, 1);
-        bool use_positional_correlation = false;
-        //(strcmp(m_antithetic_sampling_mode.c_str(), "position") == 0);
+        bool use_positional_correlation = (strcmp(m_antithetic_sampling_mode.c_str(), "position") == 0);
         
         while(rRec.depth <= m_maxDepth || m_maxDepth < 0){
             /* Only continue if:
@@ -440,15 +435,11 @@ public:
 
             if(path1.path_terminated && !path2.path_terminated){
                 path1.set_path_pdf_as(path1, 0.0);
-                path2.set_path_pdf_as(path1, 0.0);
-                path1.path_throughput *= 0;
                 std::swap(path1, path2);
             }
 
             if(!path1.path_terminated && path2.path_terminated){
-                path1.set_path_pdf_as(path2, 0.0);
                 path2.set_path_pdf_as(path2, 0.0);
-                path2.path_throughput *= 0;
             }
 
             // direct emission
@@ -488,35 +479,12 @@ public:
             /*                            BSDF sampling                             */
             /* ==================================================================== */
             Point2 bsdf_sample = rRec.nextSample2D();
-            path1.get_next_ray_from_sample(bsdf_sample);
-
-            use_positional_correlation = false;
-            const BSDF *bsdf = path1.prev_its.getBSDF(path1.ray);
-            Float its_roughness = bsdf->getRoughness(path1.prev_its, 0);
             
-            if(strcmp(m_antithetic_sampling_mode.c_str(), "position") == 0){
-                use_positional_correlation = true;
-            }
-            else if ((strcmp(m_antithetic_sampling_mode.c_str(), "adaptive") == 0)){
-                use_positional_correlation = (its_roughness > 0.1);
-            }
-
-            if(path1.its.t < 0.1){
-                use_positional_correlation = false;
-            }
-
-            // if(path1.prev_its.shFrame.n.y > 0.9){
-            //     use_positional_correlation = false;
-            // }
+            path1.get_next_ray_from_sample(bsdf_sample);
 
             if(path1.path_terminated){
                 use_positional_correlation = false;
-                path1.path_throughput *= 0.0;
                 path1.set_path_pdf_as(path1, 0.0);
-                path2.set_path_pdf_as(path1, 0.0);
-            }
-            if(its_roughness == 0.0){
-                use_positional_correlation = false;
             }
 
             if(use_positional_correlation){
@@ -526,27 +494,20 @@ public:
                 path2.get_next_ray_from_sample(bsdf_sample);
                 jacobian = path1.G / path2.G;
             }
-            if(path2.path_terminated){
-                path2.path_throughput *= 0.0;
-                path2.set_path_pdf_as(path2, 0.0);
-                path1.set_path_pdf_as(path2, 0.0);
-                // return Spectrum(100.0);
-            }
             PathTracePart::calculate_next_ray_pdf(path1, path2, jacobian);
             
-            path1.set_path_pdf_as(path1, path1.bsdfPdf * path1.G);
-            PathTracePart::update_path_pdf(path1, path2, jacobian);
-
             // Accumulate next ray Li
             Li += accumulate_next_ray_Li(path1, path2);
             Li += accumulate_next_ray_Li(path2, path1);
+
+            path1.set_path_pdf_as(path1, path1.bsdfPdf * path1.G);
+            PathTracePart::update_path_pdf(path1, path2, jacobian);
 
             rRec.type = RadianceQueryRecord::ERadianceNoEmission;
             rRec2.type = RadianceQueryRecord::ERadianceNoEmission;
             
             rRec.depth++;
             rRec2.depth++;
-            return Spectrum(path2.its.t);
         }
         return Li;
     }
@@ -662,16 +623,16 @@ public:
                 path5.get_next_ray_from_its(path3.its);
             }
 
-            path1.set_path_pdf_as(path1, path1.bsdfPdf * path1.G);
-            PathTracePart::update_path_pdf(path1, path2, 1);
-            PathTracePart::update_path_pdf(path1, path3, path1.G / path3.G);
-
             // Accumulate next ray Li
             Li += 0.5 * accumulate_next_ray_Li(path1, path2);
             Li += mis23 * accumulate_next_ray_Li(path2, path1);
             
             Li += 0.5 * accumulate_next_ray_Li(path1, path3);
             Li += mis32 * accumulate_next_ray_Li(path3, path1);
+            
+            path1.set_path_pdf_as(path1, path1.bsdfPdf * path1.G);
+            PathTracePart::update_path_pdf(path1, path2, 1);
+            PathTracePart::update_path_pdf(path1, path3, path1.G / path3.G);
 
             path2.set_path_pdf_as(path3, path4.bsdfPdf * path2.G);
             path3.set_path_pdf_as(path2, path5.bsdfPdf * path5.G);
@@ -1067,18 +1028,12 @@ public:
 
         // antithetic paths
         for(float antithetic_shift : this->m_antithetic_shifts){
-            
-            // RayDifferential ray(r);
-            // ray.time = r.time + antithetic_shift * m_time;
-            // ray.time = std::fmod(ray.time, m_time);
+            RayDifferential ray(r);
+            ray.time = r.time + antithetic_shift * m_time;
+            ray.time = std::fmod(ray.time, m_time);
             RadianceQueryRecord rRec = _rRec;
             rRec.sampler->loadSavedState();
-            RayDifferential sensorRay;
-            rRec.scene->getSensor()->sampleRayDifferential(
-                sensorRay, _rRec.samplePos, _rRec.apertureSample, std::fmod(_rRec.timeSample + antithetic_shift, 1.0));
-            sensorRay.scaleDifferential(_rRec.diffScaleFactor);
-
-            Li += Li_single(sensorRay, rRec);
+            Li += Li_single(ray, rRec);
         }
         for(float antithetic_shift : this->m_antithetic_shifts){
             rRec.sampler->advance();
@@ -1109,7 +1064,7 @@ public:
         } 
         // trace only one antithetic path
         else {
-            return Li_helper(r, rRec, 0.5);
+            return Li_helper(r, rRec, ray2_time);
         }
     }
 
@@ -1147,8 +1102,6 @@ private:
     bool m_correlate_time_samples;
     bool m_antithetic_sampling_by_shift;
     bool m_preserve_primal_mis_weight_to_one;
-    float m_primal_antithetic_mis_power;
-
     std::string m_mis_method;
     std::string m_antithetic_sampling_mode;
 };

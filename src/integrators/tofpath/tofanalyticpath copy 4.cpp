@@ -140,11 +140,7 @@ public:
         return Spectrum(0.0);
     }
 
-    Spectrum Li_helper(
-            const RayDifferential &r1,
-            const RayDifferential &r2, 
-            RadianceQueryRecord &rRec
-        ) const {
+    Spectrum Li_helper(const RayDifferential &r1,const RayDifferential &r2, RadianceQueryRecord &rRec) const {
         /* Some aliases and local variables */
         const Scene *scene = rRec.scene;
         Spectrum Li(0.0f);

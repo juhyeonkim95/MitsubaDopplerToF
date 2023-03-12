@@ -29,7 +29,8 @@ Sensor::Sensor(const Properties &props)
     m_shutterOpen = props.getFloat("shutterOpen", 0.0f);
     Float shutterClose = props.getFloat("shutterClose", 0.0f);
     m_shutterOpenTime = shutterClose - m_shutterOpen;
-
+    m_sampleTime = props.getBoolean("sampleTime", false);
+    
     if (m_shutterOpenTime < 0)
         Log(EError, "Shutter opening time must be less than "
                      "or equal to the shutter closing time!");

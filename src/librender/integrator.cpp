@@ -231,7 +231,11 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             if (needsApertureSample)
                 apertureSample = rRec.nextSample2D();
             
-
+            rRec.samplePos = samplePos;
+            rRec.apertureSample = apertureSample;
+            rRec.timeSample = timeSample;
+            rRec.diffScaleFactor = diffScaleFactor;
+            
             Spectrum spec = sensor->sampleRayDifferential(
                 sensorRay, samplePos, apertureSample, timeSample);
 

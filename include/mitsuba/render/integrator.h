@@ -306,6 +306,13 @@ public:
      * is dependent on the particular integrator implementation. (*)
      */
     int extra;
+
+
+    // added
+    Point2 samplePos;
+    Point2 apertureSample;
+    Float timeSample;
+    Float diffScaleFactor;
 };
 
 /** \brief Abstract base class, which describes integrators

@@ -298,7 +298,7 @@ public:
      * \brief Does the method \ref sampleRay() require a uniformly distributed
      * sample for the time-dependent component?
      */
-    inline bool needsTimeSample() const { return !(m_type & EDeltaTime); }
+    inline bool needsTimeSample() const { return !(m_type & EDeltaTime) && m_sampleTime; }
 
     //! @}
     // =============================================================
@@ -413,6 +413,7 @@ protected:
     bool m_antitheticSamplingByShift;
     float m_antitheticShift;
     std::vector<float> m_antitheticShifts;
+    bool m_sampleTime;
 };
 
 /**
