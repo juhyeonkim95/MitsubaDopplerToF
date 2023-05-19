@@ -255,6 +255,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             rRec.timeSample = timeSample;
             rRec.diffScaleFactor = diffScaleFactor;
             rRec.offset = Point2(offset);
+            rRec.sampleIndex = j;
             // rRec.use_positional_correlation_probability = use_positional_correlation_probability;
             
             Spectrum spec = sensor->sampleRayDifferential(

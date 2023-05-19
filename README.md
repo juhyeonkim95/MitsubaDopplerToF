@@ -1,34 +1,37 @@
 Doppler Time-of-Flight Renderer
 ===================================
 ## About
-This is Mitsuba 0.5 implementation of "Doppler Time-of-Rendering".
+This is implementation of "Doppler Time-of-Rendering" which is submitted to on Mitsuba 0.5.
 
-New integrator named tofantitheticpath is added.
+New integrator named `tofpath`, `tofantitheticpath`, `tofanalyticpath`  is added.
+Each is used for uniform/stratified, antithetic sampling and analytic integration.
 
-### ToFAntitheticPath
+To compile, follow the original Mitsuba0.5's compliation guide.
+
+Instead of default float precision, please use `config_double.py'.
+
+Followings are some input parameters.
+
+* `time` : exposure time in sec(default : 0.0015)
+* `w_g` : illumination frequency in MHz (default : 30)
+* `w_f` : sensor frequency in MHz (default : 30)
+* `f_phase_offset` : sensor phase offset in radian (default : 0)
+* `waveFunctionType` : modulation waveform (default : sinusoidal)
+* `waveFunctionType` : modulation waveform (default : sinusoidal)
+* `antitheticShifts` : antithetic shifts. Multiple input is available separated by underbar. (e.g 0.5 for single antithetic or 0.12_0.35 two antithetics ) (default : 0.5)
+* `antitheticShiftsNumber` : antithetic shifts with equal interval. If this value is set, this is used instead of `antitheticShifts`. (default : 0)
+* `low_frequency_component_only` : low pass filtering (default : True)
+* `force_constant_attenuation` : force zero-order approximation used in [Heide, 2015]
+* `timeSamplingMode` : time sampling mode. Only valid for `tofantitheticpath`. One of `antithetic` or `antithetic_mirror`.
+* `spatialCorrelationMode` : spatial correlation mode. 
+    * `none` : no correlation
+    * `pixel` : only correlate camera ray
+    * `position` : correlate intersection point
+    * `direction` : correlate direction (this is equal to sampler correlation)
+    * `selective` : select one of `position`, `direction` based on material property
 
 
+We also included example configurations with result image in `config_example` folder.
 
-http://mitsuba-renderer.org/
-
-## About
-
-Mitsuba is a research-oriented rendering system in the style of PBRT, from which it derives much inspiration. It is written in portable C++, implements unbiased as well as biased techniques, and contains heavy optimizations targeted towards current CPU architectures. Mitsuba is extremely modular: it consists of a small set of core libraries and over 100 different plugins that implement functionality ranging from materials and light sources to complete rendering algorithms.
-
-In comparison to other open source renderers, Mitsuba places a strong emphasis on experimental rendering techniques, such as path-based formulations of Metropolis Light Transport and volumetric modeling approaches. Thus, it may be of genuine interest to those who would like to experiment with such techniques that haven't yet found their way into mainstream renderers, and it also provides a solid foundation for research in this domain.
-
-The renderer currently runs on Linux, MacOS X and Microsoft Windows and makes use of SSE2 optimizations on x86 and x86_64 platforms. So far, its main use has been as a testbed for algorithm development in computer graphics, but there are many other interesting applications.
-
-Mitsuba comes with a command-line interface as well as a graphical frontend to interactively explore scenes. While navigating, a rough preview is shown that becomes increasingly accurate as soon as all movements are stopped. Once a viewpoint has been chosen, a wide range of rendering techniques can be used to generate images, and their parameters can be tuned from within the program.
-
-## Documentation
-
-For compilation, usage, and a full plugin reference, please see the [official documentation](http://mitsuba-renderer.org/docs.html).
-
-## Releases and scenes
-
-Pre-built binaries, as well as example scenes, are available on the [Mitsuba website](http://mitsuba-renderer.org/download.html).
-
-
-
-## Doppler Time-of-Flight Renderer
+The code is still not refactored yet. Also some of notations are different from Mitsuba3 version.
+We will work on this later.

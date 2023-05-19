@@ -315,6 +315,7 @@ public:
     Float diffScaleFactor;
     Point2 offset;
     Float use_positional_correlation_probability;
+    int sampleIndex;
 };
 
 /** \brief Abstract base class, which describes integrators

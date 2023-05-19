@@ -1,3 +1,11 @@
+#ifndef WAVE_TYPE_SINUSOIDAL
+#define WAVE_TYPE_SINUSOIDAL 0
+#define WAVE_TYPE_RECTANGULAR 1
+#define WAVE_TYPE_TRIANGULAR 2
+#define WAVE_TYPE_SAWTOOTH 3
+#define WAVE_TYPE_TRAPEZOIDAL 4
+#endif
+
 #include <mitsuba/render/scene.h>
 #include <mitsuba/core/statistics.h>
 

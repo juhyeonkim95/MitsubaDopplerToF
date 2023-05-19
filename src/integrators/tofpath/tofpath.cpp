@@ -18,6 +18,7 @@
 
 #include <mitsuba/render/scene.h>
 #include <mitsuba/core/statistics.h>
+#include "tof_utils.h"
 
 MTS_NAMESPACE_BEGIN
 
@@ -130,21 +131,62 @@ public:
     ToFPathTracer(Stream *stream, InstanceManager *manager)
         : MonteCarloIntegrator(stream, manager) { }
 
+    Float evalModulationFunctionValue(Float _t) const{
+        Float t = std::fmod(_t, 2 * M_PI);
+        switch(m_wave_function_type){
+            case WAVE_TYPE_SINUSOIDAL: return std::cos(t);
+            case WAVE_TYPE_RECTANGULAR: return std::abs(t-M_PI) > 0.5 * M_PI ? 1 : -1; //return dr::select(, 1, -1); //return dr::sign(dr::cos(t));
+            case WAVE_TYPE_TRIANGULAR: return t < M_PI ? 1 - 2 * t / M_PI : -3 + 2 * t / M_PI;
+        }
+        return std::cos(t);
+    }
+
+    Float evalModulationFunctionValueLowPass(Float _t) const{
+        Float t = std::fmod(_t, 2 * M_PI);
+        switch(m_wave_function_type){
+            case WAVE_TYPE_SINUSOIDAL: return std::cos(t);
+            case WAVE_TYPE_RECTANGULAR: {
+                Float a = t / M_PI;
+                Float b = 2 - a;
+                Float c = std::min(a, b);
+                return 2 - 4 * c;
+            }
+            case WAVE_TYPE_TRIANGULAR: {    
+                Float a = t / M_PI;
+                Float b = 2 - a;
+                Float c = std::min(a, b);
+                return (4 * c * c * c - 6 * c * c + 1) * 2.0 / 3.0;
+            }
+            case WAVE_TYPE_TRAPEZOIDAL: {
+                Float a = t / M_PI;
+                Float b = 2 - a;
+                Float c = std::min(a, b);
+                Float r = 2 - 4 * c;
+                return math::clamp(2.0 * r, -2.0, 2.0);
+            }
+        }
+        return std::cos(t);
+    }
+
     Float evalModulationWeight(Float &ray_time, Float &path_length) const{
         Float w_g = 2 * M_PI * m_illumination_modulation_frequency_mhz * 1e6;
         Float w_f = 2 * M_PI * m_sensor_modulation_frequency_mhz * 1e6;
+        Float w_d = 2 * M_PI * (m_sensor_modulation_frequency_mhz - m_illumination_modulation_frequency_mhz) * 1e6;
         Float phi = (2 * M_PI * m_illumination_modulation_frequency_mhz) / 300 * path_length;
 
         if(m_low_frequency_component_only){
-            Float fg_t = 0.25 * std::cos((w_f - w_g) * ray_time + m_sensor_modulation_phase_offset + phi);
+            Float t = w_d * ray_time + m_sensor_modulation_phase_offset + phi;
+            Float fg_t = 0.5 * m_illumination_modulation_scale * evalModulationFunctionValueLowPass(t);
             return fg_t;
         } 
         
-        Float g_t = 0.5 * std::cos(w_g * ray_time - phi) + 0.5;
-        Float f_t = std::cos(w_f * ray_time + m_sensor_modulation_phase_offset);
+        Float t1 = w_g * ray_time - phi;
+        Float t2 = w_f * ray_time + m_sensor_modulation_phase_offset;
+        Float g_t = m_illumination_modulation_scale * evalModulationFunctionValue(t1) + m_illumination_modulation_offset;
+        Float f_t = evalModulationFunctionValue(t2);
         return f_t * g_t;
     }
-
+    
     Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const {
         /* Some aliases and local variables */
         const Scene *scene = rRec.scene;
@@ -373,6 +415,9 @@ private:
     bool m_is_objects_transformed_for_time;
     bool m_force_constant_attenuation;
     bool m_correlate_time_samples;
+
+    
+    int m_wave_function_type;
 };
 
 MTS_IMPLEMENT_CLASS_S(ToFPathTracer, false, MonteCarloIntegrator)

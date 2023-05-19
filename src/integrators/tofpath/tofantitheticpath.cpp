@@ -112,12 +112,6 @@ static StatsCounter avgPathLength("ToFAntitheticPath tracer", "Average path leng
  * }
  */
 
- #ifndef WAVE_TYPE_SINUSOIDAL
-#define WAVE_TYPE_SINUSOIDAL 0
-#define WAVE_TYPE_RECTANGULAR 1
-#define WAVE_TYPE_TRIANGULAR 2
-#define WAVE_TYPE_SAWTOOTH 3
-#endif
 
 class ToFAntitheticPathTracer : public MonteCarloIntegrator {
 public:
@@ -126,17 +120,29 @@ public:
         m_needOffset = true; // output can be negative, so add offset to make it positive
         m_time = props.getFloat("time", 0.0015f);    // exposure time
 
+        // Modulation Function Related
         m_illumination_modulation_frequency_mhz = props.getFloat("w_g", 30.0f);
         m_illumination_modulation_scale = props.getFloat("g_1", 0.5f);
         m_illumination_modulation_offset = props.getFloat("g_0", 0.5f);
-
         m_sensor_modulation_frequency_mhz = props.getFloat("w_f", 30.0f);
-        m_sensor_modulation_scale = props.getFloat("f_1", 0.5f);
-        m_sensor_modulation_offset = props.getFloat("f_0", 0.5f);
         m_sensor_modulation_phase_offset = props.getFloat("f_phase_offset", 0.0f);
-
-        m_hetero_frequency =props.getFloat("hetero_frequency", 1.0f);
-        m_antithetic_shift = props.getFloat("antitheticShift", 0.5f);
+        std::string wave_function_type_str = props.getString("waveFunctionType", "sinusoidal");
+        
+        if(strcmp(wave_function_type_str.c_str(), "sinusoidal") == 0){
+            m_wave_function_type = WAVE_TYPE_SINUSOIDAL;
+        }
+        if(strcmp(wave_function_type_str.c_str(), "rectangular") == 0){
+            m_wave_function_type = WAVE_TYPE_RECTANGULAR;
+        }
+        if(strcmp(wave_function_type_str.c_str(), "triangular") == 0){
+            m_wave_function_type = WAVE_TYPE_TRIANGULAR;
+        }
+        if(strcmp(wave_function_type_str.c_str(), "sawtooth") == 0){
+            m_wave_function_type = WAVE_TYPE_SAWTOOTH;
+        }
+        if(strcmp(wave_function_type_str.c_str(), "trapezoidal") == 0){
+            m_wave_function_type = WAVE_TYPE_TRAPEZOIDAL;
+        }
 
         int antithetic_shift_number = props.getInteger("antitheticShiftsNumber", 0);
         if(antithetic_shift_number > 0){
@@ -152,27 +158,10 @@ public:
         }
 
         m_low_frequency_component_only = props.getBoolean("low_frequency_component_only", false);
-        m_force_constant_attenuation = props.getBoolean("force_constant_attenuation", false);
-        m_antithetic_sampling_by_shift = props.getBoolean("antitheticSamplingByShift", true);
-        m_preserve_primal_mis_weight_to_one = props.getBoolean("preservePrimalMISWeightToOne", true);
-        m_mis_method = props.getString("misMethod", "mix_all");
-
-        if(strcmp(wave_function_type_str.c_str(), "sinusoidal") == 0){
-            m_wave_function_type = WAVE_TYPE_SINUSOIDAL;
-        }
-        if(strcmp(wave_function_type_str.c_str(), "rectangular") == 0){
-            m_wave_function_type = WAVE_TYPE_RECTANGULAR;
-        }
-        if(strcmp(wave_function_type_str.c_str(), "triangular") == 0){
-            m_wave_function_type = WAVE_TYPE_TRIANGULAR;
-        }
-        if(strcmp(wave_function_type_str.c_str(), "sawtooth") == 0){
-            m_wave_function_type = WAVE_TYPE_SAWTOOTH;
-        }
+        m_force_constant_attenuation = props.getBoolean("force_constant_attenuation", false); 
 
         m_time_sampling_mode = props.getString("timeSamplingMode", "uniform");
         m_spatial_correlation_mode = props.getString("spatialCorrelationMode", "none");
-
         m_primal_antithetic_mis_power = props.getFloat("primalAntitheticMISPower", 1.0f);
     }
 
@@ -206,6 +195,13 @@ public:
                 Float c = std::min(a, b);
                 return (4 * c * c * c - 6 * c * c + 1) * 2.0 / 3.0;
             }
+            case WAVE_TYPE_TRAPEZOIDAL: {
+                Float a = t / M_PI;
+                Float b = 2 - a;
+                Float c = std::min(a, b);
+                Float r = 2 - 4 * c;
+                return math::clamp(2.0 * r, -2.0, 2.0);
+            }
         }
         return std::cos(t);
     }
@@ -218,14 +214,14 @@ public:
 
         if(m_low_frequency_component_only){
             Float t = w_d * ray_time + m_sensor_modulation_phase_offset + phi;
-            Float fg_t = 0.25 * evalModulationFunctionValueLowPass(t);
+            Float fg_t = 0.5 * m_illumination_modulation_scale * evalModulationFunctionValueLowPass(t);
             return fg_t;
         } 
         
         Float t1 = w_g * ray_time - phi;
         Float t2 = w_f * ray_time + m_sensor_modulation_phase_offset;
-        Float g_t = 0.5 * evalModulationFunctionValue(t1) + 0.5;
-        Float f_t = evalModulationFunctionValue(t2); //std::cos();
+        Float g_t = m_illumination_modulation_scale * evalModulationFunctionValue(t1) + m_illumination_modulation_offset;
+        Float f_t = evalModulationFunctionValue(t2);
         return f_t * g_t;
     }
 
@@ -691,7 +687,7 @@ public:
     }
 
     // Trace ray with two paired samples + two MIS pairs (total 5)
-    Spectrum Li_with_paired_sample_MIS(
+    Spectrum Li_with_MIS(
             const RayDifferential &r1,
             const RayDifferential &r2, 
             RadianceQueryRecord &rRec
@@ -867,6 +863,7 @@ public:
         return Li;
     }
 
+    // Trace ray with sampler correlated fashion.
     Spectrum Li_with_path_sampler_correlation(const RayDifferential &r, RadianceQueryRecord &_rRec) const
     {
         RadianceQueryRecord rRec = _rRec;
@@ -875,7 +872,7 @@ public:
 
         // primal path
         RayDifferential ray(r);
-        Spectrum Li = Li_single(ray, rRec);
+        Spectrum Li = Li_with_single_sample(ray, rRec);
 
         // antithetic paths
         for(float antithetic_shift : this->m_antithetic_shifts){
@@ -886,7 +883,7 @@ public:
                 sensorRay, _rRec.samplePos, _rRec.apertureSample, std::fmod(_rRec.timeSample + antithetic_shift, 1.0));
             sensorRay.scaleDifferential(_rRec.diffScaleFactor);
 
-            Li += Li_single(sensorRay, rRec);
+            Li += Li_with_single_sample(sensorRay, rRec);
         }
         for(float antithetic_shift : this->m_antithetic_shifts){
             rRec.sampler->advance();
@@ -908,6 +905,7 @@ public:
                 sampled_times.push_back(rRec.nextSample1D());
             }
         }
+
         // (2) stratified sampling
         else if(strcmp(m_time_sampling_mode.c_str(), "stratified") == 0){
             for(int i=0; i<n_time_samples; i++){
@@ -942,7 +940,7 @@ public:
                 rRec2.scene->getSensor()->sampleRayDifferential(
                     r2, samplePos, apertureSample, std::fmod(sampled_times.at(i), 1.0));
                 r2.scaleDifferential(rRec.diffScaleFactor);
-                Li += Li_single(r2, rRec2);
+                Li += Li_with_single_sample(r2, rRec2);
             }
             return Li * (1.0) / n_time_samples;
         }
@@ -960,7 +958,7 @@ public:
                 rRec2.scene->getSensor()->sampleRayDifferential(
                     r2, samplePos, apertureSample, std::fmod(sampled_times.at(i), 1.0));
                 r2.scaleDifferential(rRec.diffScaleFactor);
-                Li += Li_single(r2, rRec2);
+                Li += Li_with_single_sample(r2, rRec2);
             }
             return Li * (1.0) / n_time_samples;
         }
@@ -981,7 +979,7 @@ public:
                 rRec2.scene->getSensor()->sampleRayDifferential(
                     r2, samplePos, apertureSample, std::fmod(sampled_times.at(i), 1.0));
                 r2.scaleDifferential(rRec.diffScaleFactor);
-                Li += Li_single(r2, rRec2);
+                Li += Li_with_single_sample(r2, rRec2);
             }
             for(int i=0; i<n_time_samples-1; i++){
                 rRec.sampler->advance();
@@ -1000,7 +998,7 @@ public:
             rRec.scene->getSensor()->sampleRayDifferential(
                 r2, rRec.samplePos, rRec.apertureSample, std::fmod(sampled_times.at(1), 1.0));
             r2.scaleDifferential(rRec.diffScaleFactor);
-            return Li_helper_mis(r1, r2, rRec);
+            return Li_with_MIS(r1, r2, rRec);
         } 
         else {
             RayDifferential r1;
@@ -1012,7 +1010,7 @@ public:
             rRec.scene->getSensor()->sampleRayDifferential(
                 r2, rRec.samplePos, rRec.apertureSample, std::fmod(sampled_times.at(1), 1.0));
             r2.scaleDifferential(rRec.diffScaleFactor);
-            return Li_helper(r1, r2, rRec);
+            return Li_with_paired_sample(r1, r2, rRec);
         }
     }
 

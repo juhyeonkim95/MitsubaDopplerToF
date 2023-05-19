@@ -1,0 +1,23 @@
+<scene version="0.6.0">
+	<integrator type="velocity" />
+	<include filename="scene_point.xml" />
+	<sensor type="perspective">
+		<float name="fov" value="19.5" />
+		<transform name="toWorld">
+			<matrix value="-1 0 0 0 0 1 0 1 0 0 -1 6.8 0 0 0 1" />
+		</transform>
+		<sampler type="independent">
+			<integer name="sampleCount" value="512" />
+		</sampler>
+		<film type="mfilm">
+			<integer name="width" value="256" />
+			<integer name="height" value="256" />
+			<string name="fileFormat" value="numpy" />
+			<string name="pixelFormat" value="rgb" />
+			<rfilter type="tent" />
+		</film>
+		<float name="shutterOpen" value="0.0" />
+		<float name="shutterClose" value="0.0015" />
+		<boolean name="sampleTime" value="false" />
+	</sensor>
+</scene>
