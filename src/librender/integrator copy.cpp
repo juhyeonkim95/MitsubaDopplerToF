@@ -19,8 +19,6 @@
 #include <mitsuba/core/statistics.h>
 #include <mitsuba/render/integrator.h>
 #include <mitsuba/render/renderproc.h>
-#include <mitsuba/render/bsdf.h>
-#include <mitsuba/hw/basicshader.h>
 
 MTS_NAMESPACE_BEGIN
 
@@ -45,17 +43,7 @@ void Integrator::configureSampler(const Scene *scene, Sampler *sampler) {
 const Integrator *Integrator::getSubIntegrator(int idx) const { return NULL; }
 
 SamplingIntegrator::SamplingIntegrator(const Properties &props)
- : Integrator(props) {
-    m_position_direction_error_preprocess_portion = props.getFloat("position_direction_error_preprocess_portion", 0.0);
-    m_position_direction_error_texture = new ConstantSpectrumTexture(props.getSpectrum("position_direction_error_texture", Spectrum(.5f)));
-}
-
-void SamplingIntegrator::addChild(const std::string &name, ConfigurableObject *child) {
-    if (child->getClass()->derivesFrom(MTS_CLASS(Texture))
-            && (name == "position_direction_error_texture")) {
-        m_position_direction_error_texture = static_cast<Texture *>(child);
-    }
-}
+ : Integrator(props) { }
 
 SamplingIntegrator::SamplingIntegrator(Stream *stream, InstanceManager *manager)
  : Integrator(stream, manager) { }
@@ -148,14 +136,7 @@ void SamplingIntegrator::wakeup(ConfigurableObject *parent,
     std::map<std::string, SerializableObject *> &) {
     /* Do nothing by default */
 }
-inline Float miWeight(Float pdfA, Float pdfB, float power=1) {
-    if(pdfA + pdfB == 0.0f){
-        return 0.0f;
-    }
-    float ap = (pdfA == 0.0)? 0.0 : std::pow(pdfA, power);
-    float bp = (pdfB == 0.0)? 0.0 : std::pow(pdfB, power);
-    return ap / (ap + bp);
-}
+
 void SamplingIntegrator::renderBlock(const Scene *scene,
         const Sensor *sensor, Sampler *sampler, ImageBlock *block,
         const bool &stop, const std::vector< TPoint2<uint8_t> > &points) const {
@@ -183,6 +164,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
     
     Float previousTimeSample = 0.0f;
     Point2 previousSamplePos;
+    
 
     if (!sensor->getFilm()->hasAlpha()) /* Don't compute an alpha channel if we don't have to */
         queryType &= ~RadianceQueryRecord::EOpacity;
@@ -193,7 +175,6 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             break;
 
         rRec.sampler->generate(offset);
-
 
         for (size_t j = 0; j<rRec.sampler->getSampleCount(); j++) {
             rRec.newQuery(queryType, sensor->getMedium());
@@ -254,8 +235,6 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             rRec.apertureSample = apertureSample;
             rRec.timeSample = timeSample;
             rRec.diffScaleFactor = diffScaleFactor;
-            rRec.offset = Point2(offset);
-            // rRec.use_positional_correlation_probability = use_positional_correlation_probability;
             
             Spectrum spec = sensor->sampleRayDifferential(
                 sensorRay, samplePos, apertureSample, timeSample);
@@ -272,7 +251,6 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
             if(this->m_needOffset){
                 Spectrum Li_offset(1.0f);
-                // spec = Spectrum(use_positional_correlation_probability);
                 block->put(samplePos, Li_offset + spec, rRec.alpha);
             } else {
                 block->put(samplePos, spec, rRec.alpha);

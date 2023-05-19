@@ -183,6 +183,10 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
     
     Float previousTimeSample = 0.0f;
     Point2 previousSamplePos;
+    
+    //ref<ImageBlock> Li_d_block = block->clone();
+    //ref<ImageBlock> Li_p_block = block->clone();
+    
 
     if (!sensor->getFilm()->hasAlpha()) /* Don't compute an alpha channel if we don't have to */
         queryType &= ~RadianceQueryRecord::EOpacity;
@@ -193,7 +197,74 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             break;
 
         rRec.sampler->generate(offset);
+        
+        Float Li_p = 0.0;
+        Float Li_d = 0.0;
 
+        int n_preprocess = (int) (rRec.sampler->getSampleCount() * 2);
+        // m_position_direction_error_preprocess_portion
+        for (size_t j = 0; j<n_preprocess; j++) {
+            rRec.newQuery(queryType, sensor->getMedium());
+
+            // check using antithetic sampling
+            if(sensor->hasTimeSampler()){
+                timeSample = sensor->sampleTimeStamp(j, rRec.nextSample1D());
+            } else {
+                timeSample = rRec.nextSample1D();
+            }
+            
+            Point2 samplePos(Point2(offset) + Vector2(rRec.nextSample2D()));
+
+            if (needsApertureSample)
+                apertureSample = rRec.nextSample2D();
+            
+            rRec.samplePos = samplePos;
+            rRec.apertureSample = apertureSample;
+            rRec.timeSample = timeSample;
+            rRec.diffScaleFactor = diffScaleFactor;
+            rRec.offset = Point2(offset);
+            
+            Spectrum spec = sensor->sampleRayDifferential(
+                sensorRay, samplePos, apertureSample, timeSample);
+
+            sensorRay.scaleDifferential(diffScaleFactor);
+
+            auto Lis = precalculate_positional_directional_error(sensorRay, rRec);
+            //Li_d_block->put(samplePos, Lis.first, rRec.alpha);
+            //Li_p_block->put(samplePos, Lis.first, rRec.alpha);
+            // spec *= (std::abs(Lis.first[0]) - std::abs(Lis.second[0]));
+
+            Li_p += (std::abs(Lis.first[0]) * std::abs(Lis.first[0]));
+            Li_d += (std::abs(Lis.second[0]) * std::abs(Lis.second[0]));
+
+            //spec *= Li(sensorRay, rRec);
+
+            // Float timePDF = 1.0;
+            // if(needsTimeSample){
+            //     timePDF = sensor->pdfTime(sensorRay, ELength);
+            // }
+            // spec /= timePDF;
+
+            // if(this->m_needOffset){
+            //     Spectrum Li_offset(1.0f);
+            //     block->put(samplePos, Li_offset + spec, rRec.alpha);
+            // } else {
+            //     block->put(samplePos, spec, rRec.alpha);
+            // }
+            
+            rRec.sampler->advance();
+        }
+
+        //Li_d = std::sqrt(Li_d);
+        //Li_p = std::sqrt(Li_p);
+
+        Float use_positional_correlation_probability = miWeight(Li_d, Li_p, 1.0); //Li_d / (Li_d + Li_p);
+
+        //block->put(Point2(offset) + Vector2(0.5), Spectrum(use_positional_correlation_probability), rRec.alpha);
+        //const Point2 uv = Point2(offset) + Vector2(0.5);
+        //Spectrum position_direction_error = m_position_direction_error_texture->eval(uv);
+        //ref<Bitmap> texture_temp = m_position_direction_error_texture->getBitmap();
+        //Spectrum position_direction_error = texture_temp->getPixel(offset);
 
         for (size_t j = 0; j<rRec.sampler->getSampleCount(); j++) {
             rRec.newQuery(queryType, sensor->getMedium());
@@ -255,7 +326,7 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
             rRec.timeSample = timeSample;
             rRec.diffScaleFactor = diffScaleFactor;
             rRec.offset = Point2(offset);
-            // rRec.use_positional_correlation_probability = use_positional_correlation_probability;
+            rRec.use_positional_correlation_probability = use_positional_correlation_probability;
             
             Spectrum spec = sensor->sampleRayDifferential(
                 sensorRay, samplePos, apertureSample, timeSample);

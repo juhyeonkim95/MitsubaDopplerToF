@@ -45,7 +45,7 @@ public:
         m_is_objects_transformed_for_time = props.getBoolean("is_object_transformed_for_time", false);
         m_force_constant_attenuation = props.getBoolean("force_constant_attenuation", false);
         
-        m_antithetic_sampling_mode = props.getString("antitheticSamplingMode", "position");
+        m_spatial_correlation_mode = props.getString("spatialCorrelationMode", "none");
         
         m_time_intervals = props.getInteger("timeIntervals", 1);
     }
@@ -87,7 +87,7 @@ public:
         }
     }
 
-    Spectrum accumulate_nee_Li(PathTracePart &path1, PathTracePart &path2) const{
+    Spectrum accumulate_nee_Li(PathTracePart &path1, PathTracePart &path2, Float jacobian) const{
         if(path1.path_pdf_nee_as_nee > 0){
             Float p11 = path1.path_pdf_as(path1);
 
@@ -99,6 +99,7 @@ public:
             Float path_pdf = p11 * p_nee;
 
             Spectrum f_value_ratio_em = (path2.neeEmitterValue * path2.path_throughput_nee) / (path1.neeEmitterValue * path1.path_throughput_nee);
+            f_value_ratio_em *= jacobian;
 
             Float integrated_modulation_x = evalIntegratedModulationWeight(path1.ray.time, path2.ray.time, 
                 path1.em_path_length, path2.em_path_length, f_value_ratio_em[0] - 1);
@@ -113,7 +114,7 @@ public:
     }
 
 
-    Spectrum accumulate_next_ray_Li(PathTracePart &path1, PathTracePart &path2) const{
+    Spectrum accumulate_next_ray_Li(PathTracePart &path1, PathTracePart &path2, Float jacobian) const{
         if(path1.hitEmitter){
             // Primal, antithetic MIS
             Float p11 = path1.path_pdf_as(path1);
@@ -126,6 +127,7 @@ public:
             Float path_pdf = p11;
 
             Spectrum f_value_ratio = (path2.hitEmitterValue * path2.path_throughput) / (path1.hitEmitterValue * path1.path_throughput);
+            f_value_ratio *= jacobian;
 
             Float integrated_modulation_x = evalIntegratedModulationWeight(path1.ray.time, path2.ray.time, 
                 path1.path_length, path2.path_length, f_value_ratio[0] - 1);
@@ -159,9 +161,52 @@ public:
         RayDifferential ray2(r2);
         rRec2.rayIntersect(ray2);
         PathTracePart path2(ray2, rRec2, 1);
-        bool use_positional_correlation = false;
         
         while(rRec.depth <= m_maxDepth || m_maxDepth < 0){
+            bool use_positional_correlation = false;
+            if(strcmp(m_spatial_correlation_mode.c_str(), "position") == 0){
+                use_positional_correlation = true;
+            }
+            if(path1.its.isValid()){
+                const BSDF *bsdf = path1.its.getBSDF(path1.ray);
+                Float its_roughness = bsdf->getRoughness(path1.its, 0);
+                // if(its_roughness == 0.0){
+                //     use_positional_correlation = false;
+                // }
+
+                its_roughness = std::min(its_roughness, 2.0);
+
+                if(strcmp(m_spatial_correlation_mode.c_str(), "selective") == 0){
+                    if(its_roughness > 0.5){
+                        use_positional_correlation = true;
+                    }
+                }
+
+                if(strcmp(m_spatial_correlation_mode.c_str(), "adaptive") == 0){
+                    Vector3 reflected_dir = reflect(-path1.ray.d, path1.its.shFrame.n);
+                    Ray ray_mirror = Ray(path1.its.p, reflected_dir, path1.ray.time);
+                    Intersection its_mirror;
+                    Float reflected_cos_o = 1.0f;
+                    Float reflected_dist = -1.0f;
+                    if(scene->rayIntersect(ray_mirror, its_mirror)){
+                        reflected_dist = its_mirror.t;
+                        reflected_cos_o = std::abs(dot(its_mirror.shFrame.n, ray_mirror.d));
+                    } else {
+                        reflected_dist = 10.0f;
+                        reflected_cos_o = 1.0f;
+                    }
+                    Float area = its_roughness * reflected_dist * reflected_dist / (reflected_cos_o);
+
+                    Float position_correlation_probability = 3.0f * area;
+                    position_correlation_probability = std::min(position_correlation_probability, 1.0);
+                    if(rRec.nextSample1D() < position_correlation_probability){
+                        use_positional_correlation = true;
+                    } else {
+                        use_positional_correlation = false;
+                    }
+                }
+            }
+
             /* Only continue if:
             1. The current path length is below the specifed maximum
             2. If 'strictNormals'=true, when the geometric and shading
@@ -183,19 +228,18 @@ public:
             if(path1.path_terminated && path2.path_terminated){
                 break;
             }
-
-            if(path1.path_terminated && !path2.path_terminated){
-                path1.set_path_pdf_as(path1, 0.0);
-                std::swap(path1, path2);
+            else if(path1.path_terminated && !path2.path_terminated){
+                break;
             }
-
-            if(!path1.path_terminated && path2.path_terminated){
+            else if(!path1.path_terminated && path2.path_terminated){
+                path1.set_path_pdf_as(path2, 0.0);
                 path2.set_path_pdf_as(path2, 0.0);
+                path2.path_throughput *= 0;
             }
 
             // direct emission
             if(rRec.depth == 0 && !m_hideEmitters){
-                Li += accumulate_next_ray_Li(path1, path2);
+                Li += accumulate_next_ray_Li(path1, path2, 1);
             }
 
             /* ==================================================================== */
@@ -204,25 +248,18 @@ public:
             Point2 nee_sample = rRec.nextSample2D();
             path1.nee_trace(nee_sample);
 
-            Float jacobian;
-
             // For nee, positional correlation is equal to sampler correlation.
             if(use_positional_correlation){
                 path2.nee_trace(nee_sample);
-                jacobian = 1;
+                PathTracePart::calculate_nee_pdf_positional(path1, path2);
             } else {
                 path2.nee_trace(nee_sample);
-                jacobian = path1.G_nee / path2.G_nee;
+                PathTracePart::calculate_nee_pdf_sampler(path1, path2);
             }
-            PathTracePart::calculate_nee_pdf(path1, path2, jacobian);
-
             
             // Accumulate nee Li
-            Li += accumulate_nee_Li(path1, path2);
-
-            if(rRec.depth + 1>=m_maxDepth){
-                break;
-            }
+            Float jacobian = path2.path_pdf_as(path2) == 0.0 ? 0.0 : path1.path_pdf_as(path1) / path2.path_pdf_as(path2);
+            Li += accumulate_nee_Li(path1, path2, jacobian * path2.G_nee / path1.G_nee);
 
             /* ==================================================================== */
             /*                            BSDF sampling                             */
@@ -230,41 +267,35 @@ public:
             Point2 bsdf_sample = rRec.nextSample2D();
             path1.get_next_ray_from_sample(bsdf_sample);
 
-            use_positional_correlation = false;
-            const BSDF *bsdf = path1.prev_its.getBSDF(path1.ray);
-            Float its_roughness = bsdf->getRoughness(path1.prev_its, 0);
-            
-            if(strcmp(m_antithetic_sampling_mode.c_str(), "position") == 0){
-                use_positional_correlation = true;
-            }
-            else if ((strcmp(m_antithetic_sampling_mode.c_str(), "adaptive") == 0)){
-                use_positional_correlation = (its_roughness > 0.3);
-            }
-
             if(path1.path_terminated){
-                use_positional_correlation = false;
-                path1.path_throughput *= 0.0;
-                path1.set_path_pdf_as(path1, 0.0);
+                break;
             }
 
             if(use_positional_correlation){
                 path2.get_next_ray_from_its(path1.its);
-                jacobian = 1;
             } else {
                 path2.get_next_ray_from_sample(bsdf_sample);
-                jacobian = path1.G / path2.G;
             }
+
             if(path2.path_terminated){
                 path2.path_throughput *= 0.0;
                 path2.set_path_pdf_as(path2, 0.0);
+                path1.set_path_pdf_as(path2, 0.0);
             }
-            PathTracePart::calculate_next_ray_pdf(path1, path2, jacobian);
-            
-            path1.set_path_pdf_as(path1, path1.bsdfPdf * path1.G);
-            PathTracePart::update_path_pdf(path1, path2, jacobian);
+
+            if(use_positional_correlation){
+                PathTracePart::calculate_next_ray_pdf_positional(path1, path2);
+                path1.set_path_pdf_as(path1, path1.bsdfPdf);
+                PathTracePart::update_path_pdf_positional(path1, path2);
+            } else {
+                PathTracePart::calculate_next_ray_pdf_sampler(path1, path2);
+                path1.set_path_pdf_as(path1, path1.bsdfPdf);
+                PathTracePart::update_path_pdf_sampler(path1, path2);
+            }
 
             // Accumulate next ray Li
-            Li += accumulate_next_ray_Li(path1, path2);
+            jacobian = path2.path_pdf_as(path2) == 0.0 ? 0.0 : path1.path_pdf_as(path1) / path2.path_pdf_as(path2);
+            Li += accumulate_next_ray_Li(path1, path2, jacobian);
             
             rRec.type = RadianceQueryRecord::ERadianceNoEmission;
             rRec2.type = RadianceQueryRecord::ERadianceNoEmission;
@@ -335,7 +366,7 @@ private:
     bool m_is_objects_transformed_for_time;
     bool m_force_constant_attenuation;
     bool m_correlate_time_samples;
-    std::string m_antithetic_sampling_mode;
+    std::string m_spatial_correlation_mode;
 
     Float m_time;
     int m_time_intervals;

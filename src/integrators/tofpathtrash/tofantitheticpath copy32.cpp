@@ -123,9 +123,8 @@ class ToFAntitheticPathTracer : public MonteCarloIntegrator {
 public:
     ToFAntitheticPathTracer(const Properties &props)
         : MonteCarloIntegrator(props) {
-        m_needOffset = true; // output can be negative, so add offset to make it positive
-        m_time = props.getFloat("time", 0.0015f);    // exposure time
-
+        m_needOffset = true;
+        m_time = props.getFloat("time");
         m_illumination_modulation_frequency_mhz = props.getFloat("w_g", 30.0f);
         m_illumination_modulation_scale = props.getFloat("g_1", 0.5f);
         m_illumination_modulation_offset = props.getFloat("g_0", 0.5f);
@@ -134,8 +133,9 @@ public:
         m_sensor_modulation_scale = props.getFloat("f_1", 0.5f);
         m_sensor_modulation_offset = props.getFloat("f_0", 0.5f);
         m_sensor_modulation_phase_offset = props.getFloat("f_phase_offset", 0.0f);
-
         m_hetero_frequency =props.getFloat("hetero_frequency", 1.0f);
+
+        
         m_antithetic_shift = props.getFloat("antitheticShift", 0.5f);
 
         int antithetic_shift_number = props.getInteger("antitheticShiftsNumber", 0);
@@ -152,10 +152,13 @@ public:
         }
 
         m_low_frequency_component_only = props.getBoolean("low_frequency_component_only", false);
+        m_is_objects_transformed_for_time = props.getBoolean("is_object_transformed_for_time", false);
         m_force_constant_attenuation = props.getBoolean("force_constant_attenuation", false);
         m_antithetic_sampling_by_shift = props.getBoolean("antitheticSamplingByShift", true);
         m_preserve_primal_mis_weight_to_one = props.getBoolean("preservePrimalMISWeightToOne", true);
         m_mis_method = props.getString("misMethod", "mix_all");
+        std::string wave_function_type_str = props.getString("waveFunctionType", "sinusoidal");
+        std::cout << "WAVE FUNCTION TYPE: " << wave_function_type_str << std::endl;
 
         if(strcmp(wave_function_type_str.c_str(), "sinusoidal") == 0){
             m_wave_function_type = WAVE_TYPE_SINUSOIDAL;
@@ -172,6 +175,8 @@ public:
 
         m_time_sampling_mode = props.getString("timeSamplingMode", "uniform");
         m_spatial_correlation_mode = props.getString("spatialCorrelationMode", "none");
+        
+        // m_antithetic_sampling_mode = props.getString("antitheticSamplingMode", "position");
 
         m_primal_antithetic_mis_power = props.getFloat("primalAntitheticMISPower", 1.0f);
     }
@@ -198,7 +203,7 @@ public:
                 Float a = t / M_PI;
                 Float b = 2 - a;
                 Float c = std::min(a, b);
-                return 2 - 4 * c;
+                return 2 - 4 * c; //a < 1 ? 1 - 2 * a : 1 - 2 * b;
             }
             case WAVE_TYPE_TRIANGULAR: {    
                 Float a = t / M_PI;
@@ -259,6 +264,7 @@ public:
             Float p_nee = path1.path_pdf_next_ray_as_nee;
             Float p_next_ray = path1.path_pdf_next_ray_as_next_ray;
             Float mis_nee_next_ray = miWeight(p_next_ray, p_nee, 2);
+            // printf("%f, %f\n", mis_primal_antithetic, mis_nee_next_ray);
 
             Float path_pdf = p11;
             Float modulation = evalModulationWeight(path1.ray.time, path1.path_length);
@@ -267,8 +273,8 @@ public:
         return Spectrum(0.0);
     }
 
-    // Trace ray with single sample
-    Spectrum Li_with_single_sample(const RayDifferential &r, RadianceQueryRecord &rRec) const {
+
+    Spectrum Li_single(const RayDifferential &r, RadianceQueryRecord &rRec) const {
         /* Some aliases and local variables */
         const Scene *scene = rRec.scene;
         Intersection &its = rRec.its;
@@ -461,8 +467,7 @@ public:
         return Li;
     }
 
-    // Trace ray with paired sample (total 2)
-    Spectrum Li_with_paired_sample(
+    Spectrum Li_helper(
             const RayDifferential &r1,
             const RayDifferential &r2, 
             RadianceQueryRecord &rRec
@@ -495,7 +500,7 @@ public:
                 //     use_positional_correlation = false;
                 // }
 
-                its_roughness = std::min(its_roughness, 2.0);
+                its_roughness = std::min(its_roughness, 5.0);
 
                 if(strcmp(m_spatial_correlation_mode.c_str(), "selective") == 0){
                     if(its_roughness > 0.5){
@@ -503,27 +508,11 @@ public:
                     }
                 }
 
-                if(strcmp(m_spatial_correlation_mode.c_str(), "adaptive") == 0){
-                    if(rRec.depth == 1){
-                        Float position_correlation_probability = rRec.use_positional_correlation_probability;
-                        // position_correlation_probability = position_correlation_probability * its_roughness;
-                        // position_correlation_probability = position_correlation_probability / 0.1;
-                        // position_correlation_probability = std::power(position_correlation_probability, 0.1 / its_roughness);
-
-                        if(rRec.nextSample1D() < position_correlation_probability){
-                            use_positional_correlation = true;
-                        } else {
-                            use_positional_correlation = false;
-                        }
-                    } else {
-                        if(its_roughness > 0.5){
-                            use_positional_correlation = true;
-                        }
-                    }
-                    // Vector3 reflected_dir = reflect(-path1.ray.d, path1.its.shFrame.n);
-                    // const RayDifferential ray_mirror = RayDifferential(path1.its.p, reflected_dir, path1.ray.time);
-                    // Intersection its_mirror;
-                    // scene->rayIntersect(ray_mirror, its_mirror);
+                if(strcmp(m_spatial_correlation_mode.c_str(), "adaptive") == 0 && rRec.depth == 1){
+                    Vector3 reflected_dir = reflect(-path1.ray.d, path1.its.shFrame.n);
+                    const RayDifferential ray_mirror = RayDifferential(path1.its.p, reflected_dir, path1.ray.time);
+                    Intersection its_mirror;
+                    scene->rayIntersect(ray_mirror, its_mirror);
 
                     // Float reflected_cos_o = 1.0f;
                     // Float reflected_dist = -1.0f;
@@ -535,56 +524,61 @@ public:
                     //     reflected_cos_o = 1.0f;
                     // }
 
-                    // if(its_mirror.isValid()){
-                    //     Intersection its_mirror2p = its_mirror;
-                    //     its_mirror2p.adjustTime(path2.ray.time);
+                    if(its_mirror.isValid()){
+                        Intersection its_mirror2p = its_mirror;
+                        its_mirror2p.adjustTime(path2.ray.time);
                         
-                    //     const BSDF *bsdf1 = path1.its.getBSDF(path1.ray);
-                    //     const BSDF *bsdf2 = path2.its.getBSDF(path2.ray);
+                        const BSDF *bsdf1 = path1.its.getBSDF(path1.ray);
+                        const BSDF *bsdf2 = path2.its.getBSDF(path2.ray);
 
-                    //     Vector3 reflected_dir2 = reflect(-path2.ray.d, path2.its.shFrame.n);
-                    //     const RayDifferential ray_mirror2d = RayDifferential(path2.its.p, reflected_dir2, path2.ray.time);
-                    //     const RayDifferential ray_mirror2p = RayDifferential(path2.its.p, normalize(its_mirror2p.p - path2.its.p), path2.ray.time);
+                        Vector3 reflected_dir2 = reflect(-path2.ray.d, path2.its.shFrame.n);
+                        const RayDifferential ray_mirror2d = RayDifferential(path2.its.p, reflected_dir2, path2.ray.time);
+                        const RayDifferential ray_mirror2p = RayDifferential(path2.its.p, normalize(its_mirror2p.p - path2.its.p), path2.ray.time);
 
-                    //     Intersection its_mirror2d;
-                    //     scene->rayIntersect(ray_mirror2d, its_mirror2d);
+                        Intersection its_mirror2d;
+                        scene->rayIntersect(ray_mirror2d, its_mirror2d);
 
-                    //     BSDFSamplingRecord bRec1(path1.its, path1.its.toLocal(ray_mirror.d), ERadiance);
-                    //     BSDFSamplingRecord bRec1m(its_mirror, its_mirror.toLocal(normalize(light_origin - its_mirror.p)), ERadiance);
-                    //     Spectrum bsdfVal1m = bsdf1->eval(bRec1);
-                    //     const BSDF *bsdf1m = its_mirror.getBSDF(ray_mirror);
-                    //     Spectrum bsdfVal1l = bsdf1m->eval(bRec1m);
+                        BSDFSamplingRecord bRec1(path1.its, path1.its.toLocal(ray_mirror.d), ERadiance);
+                        BSDFSamplingRecord bRec1m(its_mirror, its_mirror.toLocal(normalize(light_origin - its_mirror.p)), ERadiance);
+                        Spectrum bsdfVal1m = bsdf1->eval(bRec1);
+                        const BSDF *bsdf1m = its_mirror.getBSDF(ray_mirror);
+                        Spectrum bsdfVal1l = bsdf1m->eval(bRec1m);
 
-                    //     BSDFSamplingRecord bRec2p(path2.its, path2.its.toLocal(ray_mirror2p.d), ERadiance);
-                    //     BSDFSamplingRecord bRec2mp(its_mirror2p, its_mirror2p.toLocal(normalize(light_origin - its_mirror2p.p)), ERadiance);
-                    //     Spectrum bsdfVal2mp = bsdf2->eval(bRec2p);
-                    //     const BSDF *bsdf2mp = its_mirror2p.getBSDF(ray_mirror2p);
-                    //     Spectrum bsdfVal2lp = bsdf2mp->eval(bRec2mp);
+                        BSDFSamplingRecord bRec2p(path2.its, path2.its.toLocal(ray_mirror2p.d), ERadiance);
+                        BSDFSamplingRecord bRec2mp(its_mirror2p, its_mirror2p.toLocal(normalize(light_origin - its_mirror2p.p)), ERadiance);
+                        Spectrum bsdfVal2mp = bsdf2->eval(bRec2p);
+                        const BSDF *bsdf2mp = its_mirror2p.getBSDF(ray_mirror2p);
+                        Spectrum bsdfVal2lp = bsdf2mp->eval(bRec2mp);
                         
-                    //     Float p1 = 0;
-                    //     Float p2p = 0;
-                    //     Float p2d = 0;
-                    //     if(its_mirror2d.isValid()){
-                    //         BSDFSamplingRecord bRec2d(path2.its, path2.its.toLocal(ray_mirror2d.d), ERadiance);
-                    //         BSDFSamplingRecord bRec2md(its_mirror2d, its_mirror2d.toLocal(normalize(light_origin - its_mirror2d.p)), ERadiance);
-                    //         Spectrum bsdfVal2md = bsdf2->eval(bRec2d);
-                    //         const BSDF *bsdf2md = its_mirror2d.getBSDF(ray_mirror2d);
-                    //         Spectrum bsdfVal2ld = bsdf2md->eval(bRec2md);
-                    //         p2d = (bsdfVal2md * bsdfVal2ld)[0];
-                    //     }
-                    //     p1 = (bsdfVal1m * bsdfVal1l)[0];
-                    //     p2p = (bsdfVal2mp * bsdfVal2lp)[0];
+                        Float p1 = 0;
+                        Float p2p = 0;
+                        Float p2d = 0;
+                        if(its_mirror2d.isValid()){
+                            BSDFSamplingRecord bRec2d(path2.its, path2.its.toLocal(ray_mirror2d.d), ERadiance);
+                            BSDFSamplingRecord bRec2md(its_mirror2d, its_mirror2d.toLocal(normalize(light_origin - its_mirror2d.p)), ERadiance);
+                            Spectrum bsdfVal2md = bsdf2->eval(bRec2d);
+                            const BSDF *bsdf2md = its_mirror2d.getBSDF(ray_mirror2d);
+                            Spectrum bsdfVal2ld = bsdf2md->eval(bRec2md);
+                            p2d = (bsdfVal2md * bsdfVal2ld)[0];
+                        }
+                        p1 = (bsdfVal1m * bsdfVal1l)[0];
+                        p2p = (bsdfVal2mp * bsdfVal2lp)[0];
 
-                    //     if(std::abs(p1 - p2p) < std::abs(p1 - p2d)){
-                    //         use_positional_correlation = true;
-                    //     } else {
-                    //         use_positional_correlation = true;
-                    //     }
-                    // }
+                        if(std::abs(p1 - p2p) < std::abs(p1 - p2d)){
+                            use_positional_correlation = true;
+                        } else {
+                            use_positional_correlation = true;
+                        }
+                    }
                     // Float area = its_roughness * reflected_dist * reflected_dist / (reflected_cos_o);
 
                     // Float position_correlation_probability = 6.0f * area;
-                    
+                    // position_correlation_probability = std::min(position_correlation_probability, 1.0);
+                    // if(rRec.nextSample1D() < position_correlation_probability){
+                    //     use_positional_correlation = true;
+                    // } else {
+                    //     use_positional_correlation = false;
+                    // }
                 }
             }
            
@@ -690,8 +684,7 @@ public:
         return Li;
     }
 
-    // Trace ray with two paired samples + two MIS pairs (total 5)
-    Spectrum Li_with_paired_sample_MIS(
+    Spectrum Li_helper_mis(
             const RayDifferential &r1,
             const RayDifferential &r2, 
             RadianceQueryRecord &rRec
@@ -867,7 +860,7 @@ public:
         return Li;
     }
 
-    Spectrum Li_with_path_sampler_correlation(const RayDifferential &r, RadianceQueryRecord &_rRec) const
+    Spectrum Li_path_sampler_correlation(const RayDifferential &r, RadianceQueryRecord &_rRec) const
     {
         RadianceQueryRecord rRec = _rRec;
         int n_antithetic = this->m_antithetic_shifts.size();
@@ -879,6 +872,10 @@ public:
 
         // antithetic paths
         for(float antithetic_shift : this->m_antithetic_shifts){
+            
+            // RayDifferential ray(r);
+            // ray.time = r.time + antithetic_shift * m_time;
+            // ray.time = std::fmod(ray.time, m_time);
             RadianceQueryRecord rRec = _rRec;
             rRec.sampler->loadSavedState();
             RayDifferential sensorRay;
@@ -893,7 +890,6 @@ public:
         }
         return Li * (1.0) / (n_antithetic + 1);
     }
-
 
     Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const
     {
@@ -1014,6 +1010,28 @@ public:
             r2.scaleDifferential(rRec.diffScaleFactor);
             return Li_helper(r1, r2, rRec);
         }
+
+        // // path sampler correlation
+        // if(strcmp(m_antithetic_sampling_mode.c_str(), "sampler_correlation")==0){
+        //     return Li_path_sampler_correlation(r, rRec);
+        // }
+
+        // // trace two antithetic path
+        // if(strcmp(m_antithetic_sampling_mode.c_str(), "mis")==0){
+        //     RayDifferential r2;
+        //     rRec.scene->getSensor()->sampleRayDifferential(
+        //         r2, rRec.samplePos, rRec.apertureSample, std::fmod(rRec.timeSample + 0.5, 1.0));
+        //     r2.scaleDifferential(rRec.diffScaleFactor);
+        //     return Li_helper_mis(r, r2, rRec);
+        // } 
+        // // trace only one antithetic path
+        // else {
+        //     RayDifferential r2;
+        //     rRec.scene->getSensor()->sampleRayDifferential(
+        //         r2, rRec.samplePos, rRec.apertureSample, std::fmod(rRec.timeSample + 0.5, 1.0));
+        //     r2.scaleDifferential(rRec.diffScaleFactor);
+        //     return Li_helper(r, r2, rRec);
+        // }
     }
 
     void serialize(Stream *stream, InstanceManager *manager) const {
@@ -1045,6 +1063,7 @@ private:
     std::vector<float> m_antithetic_shifts;
     
     bool m_low_frequency_component_only;
+    bool m_is_objects_transformed_for_time;
     bool m_force_constant_attenuation;
     bool m_correlate_time_samples;
     bool m_antithetic_sampling_by_shift;

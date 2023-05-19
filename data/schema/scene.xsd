@@ -106,6 +106,7 @@
 					<xsd:group ref="objectGroup"/>
 					<xsd:element name="integrator" type="integrator"/>
 					<xsd:element name="sampler" type="object"/>
+					<xsd:element name="texture" type="texture"/>
 				</xsd:choice>
 			</xsd:extension>
 		</xsd:complexContent>

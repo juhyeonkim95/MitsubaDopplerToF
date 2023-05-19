@@ -313,6 +313,8 @@ public:
     Point2 apertureSample;
     Float timeSample;
     Float diffScaleFactor;
+    Point2 offset;
+    Float use_positional_correlation_probability;
 };
 
 /** \brief Abstract base class, which describes integrators
@@ -327,7 +329,12 @@ public:
      */
     virtual Spectrum Li(const RayDifferential &ray,
         RadianceQueryRecord &rRec) const = 0;
-
+    virtual std::pair<Spectrum, Spectrum> precalculate_positional_directional_error(const RayDifferential &r, RadianceQueryRecord &rRec)
+     const {
+            return {Spectrum(1.0), Spectrum(1.0)};
+            //return std::make_pair<Spectrum, Spectrum>(Spectrum(1.0), Spectrum(1.0));
+        }
+    virtual void addChild(const std::string &name, ConfigurableObject *child);
     /**
      * \brief Estimate the irradiance at a given surface point
      *
@@ -441,6 +448,8 @@ protected:
     /// Used to temporarily cache a parallel process while it is in operation
     ref<ParallelProcess> m_process;
     bool m_needOffset=false;
+    Float m_position_direction_error_preprocess_portion;
+    ref<Texture> m_position_direction_error_texture;
 };
 
 /*

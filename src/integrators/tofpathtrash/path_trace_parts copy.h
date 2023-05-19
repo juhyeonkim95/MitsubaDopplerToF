@@ -160,7 +160,7 @@ public:
                     // } else {
                     //     path_pdf_nee_as_next_ray = angle_pdf_nee_as_bsdf * G_nee;
                     // }
-                    path_throughput_nee = path_throughput * bsdfVal;
+                    path_throughput_nee = path_throughput * bsdfVal * G_nee;
                 }
             }
         }
@@ -211,36 +211,28 @@ public:
         const BSDF *bsdf = its.getBSDF(ray);
         next_its = _its;
         next_its.adjustTime(ray.time);
-        //Point target_p = next_its.p;
-        Float dist = (next_its.p - its.p).length();
+        next_its.t = (next_its.p - its.p).length();
 
         const Vector wo = normalize(next_its.p - its.p);
-        ray = Ray(its.p, wo, ray.time);
-        scene->rayIntersect(ray, next_its);
 
-        // next_its.t = (next_its.p - its.p).length();
-
-        // const Vector wo = normalize(next_its.p - its.p);
 
         BSDFSamplingRecord bRec(its, its.toLocal(wo), ERadiance);
         bsdfVal = bsdf->eval(bRec);
         bsdfPdf = bsdf->pdf(bRec);
         
-        // // Check discontinuity
-        // Intersection next_its_temp;
-        // ray = Ray(its.p, wo, ray.time);
-        // ray.maxt = next_its.t*(1-ShadowEpsilon); //std::max(, Epsilon);
-        // ray.mint = Epsilon;
-        if(dist - 1e-3 > next_its.t){
-            this->path_terminated=true;
-        }
-        // path_terminated = scene->rayIntersect(ray, next_its_temp);
+        // Check discontinuity
+        Intersection next_its_temp;
+        ray = Ray(its.p, wo, ray.time);
+        ray.maxt = next_its.t*(1-ShadowEpsilon); //std::max(, Epsilon);
+        ray.mint = Epsilon;
+
+        path_terminated = scene->rayIntersect(ray, next_its_temp);
         if(this->path_terminated){
             return;
         }
         // get_sample_from_direction();
 
-        // const BSDF *bsdf = its.getBSDF(ray);
+        //const BSDF *bsdf = its.getBSDF(ray);
         // sample = bsdf->get_sample_from_direction(bRec);
 
         // BSDFSamplingRecord bRec2(its, rRec.sampler, ERadiance);
@@ -250,51 +242,32 @@ public:
         bsdf_trace(bRec);
     }
 
-    static void update_path_pdf_positional(PathTracePart &path1, PathTracePart &path2){
-        Float jacobian = path2.G / path1.G;
-        //path1.set_path_pdf_as(path1, path1.bsdfPdf);
-        path1.set_path_pdf_as(path2, path2.bsdfPdf * jacobian);
-        path2.set_path_pdf_as(path1, path2.bsdfPdf);
-        path2.set_path_pdf_as(path2, path1.bsdfPdf / jacobian);
+    static void update_path_pdf(PathTracePart &path1, PathTracePart &path2, Float jacobian){
+        //path1.set_path_pdf_as_nee(path1, path1.lumPdf * path1.G);
+        //path1.set_path_pdf_as_nee(path2, path2.lumPdf * path2.G * jacobian);
+        //path2.set_path_pdf_as_nee(path1, path2.lumPdf * path2.G);
+        //path2.set_path_pdf_as_nee(path2, path1.lumPdf * path1.G / jacobian);
+        
+        // path1.set_path_pdf_as(path1, path1.bsdfPdf * path1.G);
+        path1.set_path_pdf_as(path2, path2.bsdfPdf * path2.G * jacobian);
+        path2.set_path_pdf_as(path1, path2.bsdfPdf * path2.G);
+        path2.set_path_pdf_as(path2, path1.bsdfPdf * path1.G / jacobian);
     }
 
-    static void update_path_pdf_sampler(PathTracePart &path1, PathTracePart &path2){
-        //path1.set_path_pdf_as(path1, path1.bsdfPdf);
-        path1.set_path_pdf_as(path2, path1.bsdfPdf);
-        path2.set_path_pdf_as(path1, path2.bsdfPdf);
-        path2.set_path_pdf_as(path2, path2.bsdfPdf);
+    static void calculate_next_ray_pdf(PathTracePart &path1, PathTracePart &path2, Float jacobian){
+        path1.path_pdf_next_ray_as_nee = path1.lumPdf * path1.G;
+        path1.path_pdf_next_ray_as_next_ray = path1.bsdfPdf * path1.G;
+
+        path2.path_pdf_next_ray_as_nee = path2.lumPdf * path1.G / jacobian;
+        path2.path_pdf_next_ray_as_next_ray = path1.bsdfPdf * path1.G / jacobian;
     }
 
-    static void calculate_next_ray_pdf_positional(PathTracePart &path1, PathTracePart &path2){
-        path1.path_pdf_next_ray_as_nee = path1.lumPdf;
-        path1.path_pdf_next_ray_as_next_ray = path1.bsdfPdf;
+    static void calculate_nee_pdf(PathTracePart &path1, PathTracePart &path2, Float jacobian){
+        path1.path_pdf_nee_as_nee = path1.lumPdf * path1.G_nee;
+        path1.path_pdf_nee_as_next_ray = path1.bsdfPdf * path1.G_nee;
 
-        path2.path_pdf_next_ray_as_nee = path2.lumPdf;
-        path2.path_pdf_next_ray_as_next_ray = path1.bsdfPdf * path1.G / path2.G;
-    }
-
-    static void calculate_next_ray_pdf_sampler(PathTracePart &path1, PathTracePart &path2){
-        path1.path_pdf_next_ray_as_nee = path1.lumPdf;
-        path1.path_pdf_next_ray_as_next_ray = path1.bsdfPdf;
-
-        path2.path_pdf_next_ray_as_nee = path2.lumPdf;
-        path2.path_pdf_next_ray_as_next_ray = path2.bsdfPdf;
-    }
-
-    static void calculate_nee_pdf_positional(PathTracePart &path1, PathTracePart &path2){
-        path1.path_pdf_nee_as_nee = path1.lumPdf;
-        path1.path_pdf_nee_as_next_ray = path1.bsdfPdf;
-
-        path2.path_pdf_nee_as_nee = path2.lumPdf;
-        path2.path_pdf_nee_as_next_ray = path1.bsdfPdf * path1.G_nee / path2.G_nee;
-    }
-
-    static void calculate_nee_pdf_sampler(PathTracePart &path1, PathTracePart &path2){
-        path1.path_pdf_nee_as_nee = path1.lumPdf;
-        path1.path_pdf_nee_as_next_ray = path1.bsdfPdf;
-
-        path2.path_pdf_nee_as_nee = path2.lumPdf;
-        path2.path_pdf_nee_as_next_ray = path2.bsdfPdf;
+        path2.path_pdf_nee_as_nee = path2.lumPdf * path1.G_nee / jacobian;
+        path2.path_pdf_nee_as_next_ray = path1.bsdfPdf * path1.G_nee / jacobian;
     }
 
 
@@ -304,10 +277,10 @@ public:
         //path2.set_path_pdf_as_nee(path1, path2.lumPdf * path2.G);
         //path2.set_path_pdf_as_nee(path3, path1.lumPdf * path1.G / jacobian);
         
-        path1.set_path_pdf_as(path1, path1.bsdfPdf);
-        path1.set_path_pdf_as(path2, path2.bsdfPdf * jacobian);
-        path2.set_path_pdf_as(path1, path2.bsdfPdf);
-        path2.set_path_pdf_as(path3, path1.bsdfPdf / jacobian);
+        path1.set_path_pdf_as(path1, path1.bsdfPdf * path1.G);
+        path1.set_path_pdf_as(path2, path2.bsdfPdf * path2.G * jacobian);
+        path2.set_path_pdf_as(path1, path2.bsdfPdf * path2.G);
+        path2.set_path_pdf_as(path3, path1.bsdfPdf * path1.G / jacobian);
     }
 
     void bsdf_trace(const BSDFSamplingRecord& bRec){
@@ -365,9 +338,10 @@ public:
         G = (bRec.sampledType & BSDF::EDelta) ? 1.0 : std::abs(dot(its.shFrame.n, ray.d)) / (its.t * its.t);
         path_length += its.t;
 
+
         /* Keep track of the throughput and relative
             refractive index along the path */
-        path_throughput *= bsdfVal;
+        path_throughput *= (bsdfVal * G);
         eta *= bRec.eta;
 
         /* If a luminaire was hit, estimate the local illumination and
@@ -380,5 +354,97 @@ public:
                 scene->pdfEmitterDirect(dRec) : 0;
             // Li += throughput * value * miWeight(bsdfPdf, lumPdf);
         }
+
+        //path_pdf_next_ray_as_next_ray = bsdfPdf * G;
+        //path_pdf_next_ray_as_nee = lumPdf * G;
     }
+
+
+    // void bsdf_trace(Point2 &sample){
+    //     path_pdf_next_ray_as_next_ray = 0.0f;
+    //     path_pdf_next_ray_as_nee = 0.0f;
+    //     bsdfPdf = 0.0;
+    //     lumPdf = 0.0;        
+    //     hitEmitter = false;
+    //     hitEmitterValue = Spectrum(0.0);
+
+    //     if(this->path_terminated)
+    //         return;
+    //     const BSDF *bsdf = its.getBSDF(ray);
+
+    //     /* Sample BSDF * cos(theta) */
+        
+    //     BSDFSamplingRecord bRec(its, rRec.sampler, ERadiance);
+    //     Spectrum bsdfWeight = bsdf->sample(bRec, bsdfPdf, sample);
+    //     Spectrum bsdfVal = bsdfWeight * bsdfPdf;
+
+    //     if (bsdfWeight.isZero()){
+    //         path_terminated = true;
+    //         return;
+    //     }
+
+    //     scattered |= bRec.sampledType != BSDF::ENull;
+
+    //     /* Prevent light leaks due to the use of shading normals */
+    //     const Vector wo = its.toWorld(bRec.wo);
+    //     Float woDotGeoN = dot(its.geoFrame.n, wo);
+    //     if (m_strictNormals && woDotGeoN * Frame::cosTheta(bRec.wo) <= 0){
+    //         path_terminated = true;
+    //         return;
+    //     }
+
+    //     /* Trace a ray in this direction */
+    //     ray = Ray(its.p, wo, ray.time);
+    //     if (scene->rayIntersect(ray, its))) {
+    //         /* Intersected something - check if it was a luminaire */
+    //         if (its.isEmitter()) {
+    //             hitEmitterValue = its.Le(-ray.d);
+    //             dRec.setQuery(ray, its);
+    //             hitEmitter = true;
+    //         }
+    //     } else {
+    //         /* Intersected nothing -- perhaps there is an environment map? */
+    //         const Emitter *env = scene->getEnvironmentEmitter();
+
+    //         if (env) {
+    //             if (m_hideEmitters && !scattered){
+    //                 path_terminated = true;
+    //                 return;
+    //             }
+
+    //             hitEmitterValue = env->evalEnvironment(ray);
+    //             if (!env->fillDirectSamplingRecord(dRec, ray)){
+    //                 path_terminated = true;
+    //                 return;
+    //             }
+    //             hitEmitter = true;
+    //         } else {
+    //             path_terminated = true;
+    //             return;
+    //         }
+    //     }
+
+    //     G = std::abs(dot(its.shFrame.n, ray.d)) / (its.t * its.t);
+    //     path_length += its.t;
+
+
+    //     /* Keep track of the throughput and relative
+    //         refractive index along the path */
+    //     path_throughput *= bsdfVal * G;
+    //     eta *= bRec.eta;
+
+    //     /* If a luminaire was hit, estimate the local illumination and
+    //         weight using the power heuristic */
+    //     if (hitEmitter &&
+    //         (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance)) {
+    //         /* Compute the prob. of generating that direction using the
+    //             implemented direct illumination sampling technique */
+    //         lumPdf = (!(bRec.sampledType & BSDF::EDelta)) ?
+    //             scene->pdfEmitterDirect(dRec) : 0;
+    //         // Li += throughput * value * miWeight(bsdfPdf, lumPdf);
+    //     }
+
+    //     path_pdf_next_ray_as_next_ray = bsdfPdf * G;
+    //     path_pdf_next_ray_as_nee = lumPdf * G;
+    // }
 };

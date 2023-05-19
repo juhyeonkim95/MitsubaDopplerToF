@@ -4,7 +4,7 @@
 using namespace mitsuba;
 
 bool check_consistency(Intersection& its1, Intersection& its2){
-    bool consistent = its1.isValid() && its2.isValid() && (its1.p - its2.p).length() < 0.1 && dot(its1.shFrame.n, its2.shFrame.n) > 0.9;
+    bool consistent = its1.isValid() && its2.isValid() && (its1.p - its2.p).length() < 0.1 && dot(its1.shFrame.n, its2.shFrame.n) > 0.7;
     return consistent;
 }
 
@@ -19,8 +19,8 @@ inline Float miWeight(Float pdfA, Float pdfB, float power=1) {
     if(pdfA + pdfB == 0.0f){
         return 0.0f;
     }
-    float ap = std::pow(pdfA, power);
-    float bp = std::pow(pdfB, power);
+    float ap = (pdfA == 0.0)? 0.0 : std::pow(pdfA, power);
+    float bp = (pdfB == 0.0)? 0.0 : std::pow(pdfB, power);
     return ap / (ap + bp);
 }
 
