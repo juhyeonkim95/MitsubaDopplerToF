@@ -1,7 +1,8 @@
 Doppler Time-of-Flight Renderer
 ===================================
 ## About
-This is implementation of "Doppler Time-of-Rendering" which is submitted to on Mitsuba 0.5.
+This is Mitsuba0.5 implementation of "Doppler Time-of-Rendering" submitted to SIGGRAPH Asia 2023.
+Please also check Mitsuba3 implementation at []here.
 
 New integrator named `tofpath`, `tofantitheticpath`, `tofanalyticpath`  is added.
 Each is used for uniform/stratified, antithetic sampling and analytic integration.

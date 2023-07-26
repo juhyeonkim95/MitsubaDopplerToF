@@ -32,6 +32,12 @@ inline Float miWeight(Float pdfA, Float pdfB, float power=1) {
     return ap / (ap + bp);
 }
 
+// inline Float miWeightPower(Float pdfA, Float pdfB) const {
+//     pdfA *= pdfA;
+//     pdfB *= pdfB;
+//     return pdfA / (pdfA + pdfB);
+// }
+
 inline Float miWeight4(Float pdfA, Float pdfB, Float pdfC, Float pdfD, float power=1) {
     if(pdfA + pdfB +pdfC + pdfD == 0.0f){
         return 0.0f;

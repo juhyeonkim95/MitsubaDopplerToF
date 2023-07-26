@@ -6,6 +6,7 @@ plugins += env.SharedLibrary('tofpath', ['tofpath/tofpath.cpp'])
 plugins += env.SharedLibrary('tofanalyticpath', ['tofpath/tofanalyticpath.cpp'])
 plugins += env.SharedLibrary('tofantitheticpath', ['tofpath/tofantitheticpath.cpp'])
 plugins += env.SharedLibrary('velocity', ['tofpath/velocity.cpp'])
+plugins += env.SharedLibrary('difference', ['tofpath/difference.cpp'])
 
 plugins += env.SharedLibrary('path', ['path/path.cpp'])
 plugins += env.SharedLibrary('volpath', ['path/volpath.cpp'])
