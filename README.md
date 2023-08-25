@@ -13,12 +13,19 @@ Instead of default float precision, please use `config_double.py'.
 
 Followings are some input parameters.
 
-* `time` : exposure time in sec(default : 0.0015)
+* `time` : exposure time in sec (default : 0.0015)
 * `w_g` : illumination frequency in MHz (default : 30)
 * `w_f` : sensor frequency in MHz (default : 30)
 * `f_phase_offset` : sensor phase offset in radian (default : 0)
 * `waveFunctionType` : modulation waveform (default : sinusoidal)
-* `waveFunctionType` : modulation waveform (default : sinusoidal)
+
+| Name        | Sensor Modulation | Light Modulation | Low Pass Filtered |
+|-------------|-------------------|------------------|-------------------|
+| sinusoidal  | sinusoidal        | sinusoidal       | sinusoidal        |
+| rectangular | rectangular       | rectangular      | triangular        |
+| triangular  | triangular        | triangular       | Corr(tri, tri)    |
+| trapezoidal | trapezoidal       | delta            | trapezoidal       |
+
 * `antitheticShifts` : antithetic shifts. Multiple input is available separated by underbar. (e.g 0.5 for single antithetic or 0.12_0.35 two antithetics ) (default : 0.5)
 * `antitheticShiftsNumber` : antithetic shifts with equal interval. If this value is set, this is used instead of `antitheticShifts`. (default : 0)
 * `low_frequency_component_only` : low pass filtering (default : True)

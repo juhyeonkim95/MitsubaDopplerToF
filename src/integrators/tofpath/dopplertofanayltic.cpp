@@ -22,12 +22,12 @@
 
 MTS_NAMESPACE_BEGIN
 
-static StatsCounter avgPathLength("ToFPath tracer", "Average path length", EAverage);
+static StatsCounter avgPathLength("Doppler ToF Anayltic Path tracer", "Average path length", EAverage);
 
 
-class ToFAnalyticPathTracer : public MonteCarloIntegrator {
+class DopplerToFAnalyticPathTracer : public MonteCarloIntegrator {
 public:
-    ToFAnalyticPathTracer(const Properties &props)
+    DopplerToFAnalyticPathTracer(const Properties &props)
         : MonteCarloIntegrator(props) {
             
         m_needOffset = true;
@@ -51,7 +51,7 @@ public:
     }
 
     /// Unserialize from a binary data stream
-    ToFAnalyticPathTracer(Stream *stream, InstanceManager *manager)
+    DopplerToFAnalyticPathTracer(Stream *stream, InstanceManager *manager)
         : MonteCarloIntegrator(stream, manager) { }
 
 
@@ -343,7 +343,7 @@ public:
 
     std::string toString() const {
         std::ostringstream oss;
-        oss << "ToFAnalyticPathTracer[" << endl
+        oss << "DopplerToFAnalyticPathTracer[" << endl
             << "  maxDepth = " << m_maxDepth << "," << endl
             << "  rrDepth = " << m_rrDepth << "," << endl
             << "  strictNormals = " << m_strictNormals << endl
@@ -372,6 +372,6 @@ private:
     int m_time_intervals;
 };
 
-MTS_IMPLEMENT_CLASS_S(ToFAnalyticPathTracer, false, MonteCarloIntegrator)
-MTS_EXPORT_PLUGIN(ToFAnalyticPathTracer, "ToF analytic path tracer");
+MTS_IMPLEMENT_CLASS_S(DopplerToFAnalyticPathTracer, false, MonteCarloIntegrator)
+MTS_EXPORT_PLUGIN(DopplerToFAnalyticPathTracer, "ToF analytic path tracer");
 MTS_NAMESPACE_END

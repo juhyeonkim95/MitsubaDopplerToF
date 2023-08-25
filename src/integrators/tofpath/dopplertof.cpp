@@ -25,9 +25,9 @@
 
 MTS_NAMESPACE_BEGIN
 
-static StatsCounter avgPathLength("ToFAntitheticPath tracer", "Average path length", EAverage);
+static StatsCounter avgPathLength("Doppler ToF path tracer", "Average path length", EAverage);
 
-/*! \plugin{tofpath}{ToFPath tracer}
+/*! \plugin{dopplertof}{ToFPath tracer}
  * \order{2}
  * \parameters{
  *     \parameter{maxDepth}{\Integer}{Specifies the longest path depth
@@ -113,21 +113,23 @@ static StatsCounter avgPathLength("ToFAntitheticPath tracer", "Average path leng
  */
 
 
-class ToFAntitheticPathTracer : public MonteCarloIntegrator {
+class DopplerToFPathTracer : public MonteCarloIntegrator {
 public:
-    ToFAntitheticPathTracer(const Properties &props)
+    DopplerToFPathTracer(const Properties &props)
         : MonteCarloIntegrator(props) {
         m_needOffset = true; // output can be negative, so add offset to make it positive
         m_time = props.getFloat("time", 0.0015f);    // exposure time
 
-        // Modulation Function Related
+        // modulation function frequency / scale / offset
         m_illumination_modulation_frequency_mhz = props.getFloat("w_g", 30.0f);
         m_illumination_modulation_scale = props.getFloat("g_1", 0.5f);
         m_illumination_modulation_offset = props.getFloat("g_0", 0.5f);
         m_sensor_modulation_frequency_mhz = props.getFloat("w_f", 30.0f);
         m_sensor_modulation_phase_offset = props.getFloat("f_phase_offset", 0.0f);
+
+        // modulation function waveform
         std::string wave_function_type_str = props.getString("waveFunctionType", "sinusoidal");
-        
+
         if(strcmp(wave_function_type_str.c_str(), "sinusoidal") == 0){
             m_wave_function_type = WAVE_TYPE_SINUSOIDAL;
         }
@@ -144,6 +146,7 @@ public:
             m_wave_function_type = WAVE_TYPE_TRAPEZOIDAL;
         }
 
+        // Use time antithetic samples?
         int antithetic_shift_number = props.getInteger("antitheticShiftsNumber", 0);
         if(antithetic_shift_number > 0){
             m_antithetic_shifts.clear();
@@ -166,7 +169,7 @@ public:
     }
 
     /// Unserialize from a binary data stream
-    ToFAntitheticPathTracer(Stream *stream, InstanceManager *manager)
+    DopplerToFPathTracer(Stream *stream, InstanceManager *manager)
         : MonteCarloIntegrator(stream, manager) { }
 
     Float evalModulationFunctionValue(Float _t) const{
@@ -1020,7 +1023,7 @@ public:
 
     std::string toString() const {
         std::ostringstream oss;
-        oss << "ToFAntitheticPathTracer[" << endl
+        oss << "DopplerToFPathTracer[" << endl
             << "  maxDepth = " << m_maxDepth << "," << endl
             << "  rrDepth = " << m_rrDepth << "," << endl
             << "  strictNormals = " << m_strictNormals << endl
@@ -1059,8 +1062,8 @@ private:
     // std::string m_antithetic_sampling_mode;
 };
 
-MTS_IMPLEMENT_CLASS_S(ToFAntitheticPathTracer, false, MonteCarloIntegrator)
-MTS_EXPORT_PLUGIN(ToFAntitheticPathTracer, "ToF antithetic path tracer");
+MTS_IMPLEMENT_CLASS_S(DopplerToFPathTracer, false, MonteCarloIntegrator)
+MTS_EXPORT_PLUGIN(DopplerToFPathTracer, "ToF antithetic path tracer");
 MTS_NAMESPACE_END
 
 
