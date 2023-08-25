@@ -19,12 +19,12 @@ Followings are some input parameters.
 * `f_phase_offset` : sensor phase offset in radian (default : 0)
 * `waveFunctionType` : modulation waveform (default : sinusoidal)
 
-| Name        | Sensor Modulation | Light Modulation | Low Pass Filtered |
+| `waveFunctionType`        | Sensor Modulation | Light Modulation | Low Pass Filtered |
 |-------------|-------------------|------------------|-------------------|
-| sinusoidal  | sinusoidal        | sinusoidal       | sinusoidal        |
-| rectangular | rectangular       | rectangular      | triangular        |
-| triangular  | triangular        | triangular       | Corr(tri, tri)    |
-| trapezoidal | trapezoidal       | delta            | trapezoidal       |
+| `sinusoidal`  | sinusoidal        | sinusoidal       | sinusoidal        |
+| `rectangular` | rectangular       | rectangular      | triangular        |
+| `triangular`  | triangular        | triangular       | Corr(tri, tri)    |
+| `trapezoidal` | trapezoidal       | delta            | trapezoidal       |
 
 * `antitheticShifts` : antithetic shifts. Multiple input is available separated by underbar. (e.g 0.5 for single antithetic or 0.12_0.35 two antithetics ) (default : 0.5)
 * `antitheticShiftsNumber` : antithetic shifts with equal interval. If this value is set, this is used instead of `antitheticShifts`. (default : 0)
