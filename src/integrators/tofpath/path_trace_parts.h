@@ -231,7 +231,7 @@ public:
         // ray = Ray(its.p, wo, ray.time);
         // ray.maxt = next_its.t*(1-ShadowEpsilon); //std::max(, Epsilon);
         // ray.mint = Epsilon;
-        if(dist - 1e-3 > next_its.t){
+        if(dist - 1e-10 > next_its.t){
             this->path_terminated=true;
         }
         // path_terminated = scene->rayIntersect(ray, next_its_temp);

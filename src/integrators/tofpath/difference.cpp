@@ -163,6 +163,8 @@ public:
         m_time_sampling_mode = props.getString("timeSamplingMode", "uniform");
         m_spatial_correlation_mode = props.getString("spatialCorrelationMode", "none");
         m_primal_antithetic_mis_power = props.getFloat("primalAntitheticMISPower", 1.0f);
+
+        m_difference_target = props.getString("differenceTarget", "time");
     }
 
     /// Unserialize from a binary data stream
@@ -207,7 +209,8 @@ public:
     }
 
     Float evalModulationWeight(Float &ray_time, Float &path_length) const{
-        return (ray_time > 0.5 * m_time) ? 1.0 : -1.0;
+        return 1;
+        //return (ray_time > 0.5 * m_time) ? 1.0 : -1.0;
     }
 
     Spectrum accumulate_nee_Li(PathTracePart &path1, PathTracePart &path2, bool debug=false) const{
@@ -463,15 +466,25 @@ public:
         rRec2.rayIntersect(ray2);
         PathTracePart path2(ray2, rRec2, 1);
 
+
+        PathTracePart path1_next(ray1, rRec, 0);
+
         Point3 light_origin = ray1.o;
         while(rRec.depth <= m_maxDepth || m_maxDepth < 0){
+
+            Point2 bsdf_sample = rRec.nextSample2D();
+            path1_next = path1;
+            path1_next.get_next_ray_from_sample(bsdf_sample);
+
             bool use_positional_correlation = false;
             if(strcmp(m_spatial_correlation_mode.c_str(), "position") == 0){
                 use_positional_correlation = true;
             }
-            if(path1.its.isValid()){
+            if(path1.its.isValid() && path1_next.its.isValid()){
                 const BSDF *bsdf = path1.its.getBSDF(path1.ray);
                 Float its_roughness = bsdf->getRoughness(path1.its, 0);
+                const BSDF *bsdf_next = path1_next.its.getBSDF(path1_next.ray);
+                Float its_roughness_next = bsdf_next->getRoughness(path1_next.its, 0);
                 // if(its_roughness == 0.0){
                 //     use_positional_correlation = false;
                 // }
@@ -479,9 +492,37 @@ public:
                 its_roughness = std::min(its_roughness, 2.0);
 
                 if(strcmp(m_spatial_correlation_mode.c_str(), "selective") == 0){
-                    if(its_roughness > 0.5){
+                    if(its_roughness > 0.5 && its_roughness_next > 0.5){
                         use_positional_correlation = true;
                     }
+                }
+
+                if(strcmp(m_spatial_correlation_mode.c_str(), "adaptive") == 0){
+                    if(rRec.depth == 1){
+                        if(rRec.use_positional_correlation_probability > 0.5){
+                            use_positional_correlation = true;
+                        } else {
+                            use_positional_correlation = false;
+                        }
+                    } else {
+                        if(its_roughness > 0.5){
+                            use_positional_correlation = true;
+                        }
+                    }
+                }
+
+                if(strcmp(m_spatial_correlation_mode.c_str(), "mixed") == 0){
+                    Intersection transformed_its = path1_next.its;
+                    transformed_its.adjustTime(path2.ray.time);
+                    
+                    Vector3 mv1 = transformed_its.p - path1_next.its.p;
+                    
+                    Vector3 mv2 = mv1 - dot(mv1, path1_next.ray.d) * path1_next.ray.d;
+                    Vector3 mv3 = mv2 - dot(mv2, path1_next.its.geoFrame.n) * path1_next.its.geoFrame.n;
+
+                    Vector3 mv_local = path1_next.its.toLocal(mv3);
+                    Vector2 mv = Vector2(mv_local.x, mv_local.y);
+                    Vector2 uv = path1_next.its.uv;
                 }
             }
 
@@ -518,7 +559,7 @@ public:
             // direct emission
             if(rRec.depth == 0 && !m_hideEmitters){
                 Li += accumulate_next_ray_Li(path1, path2);
-                Li += accumulate_next_ray_Li(path2, path1);
+                Li -= accumulate_next_ray_Li(path2, path1);
             }
 
             /* ==================================================================== */
@@ -538,14 +579,12 @@ public:
             
             // Accumulate nee Li
             Li += accumulate_nee_Li(path1, path2);
-            Li += accumulate_nee_Li(path2, path1);
+            Li -= accumulate_nee_Li(path2, path1);
 
             /* ==================================================================== */
             /*                            BSDF sampling                             */
             /* ==================================================================== */
-
-            Point2 bsdf_sample = rRec.nextSample2D();
-            path1.get_next_ray_from_sample(bsdf_sample);
+            path1 = path1_next;
 
             if(path1.path_terminated){
                 break;
@@ -575,7 +614,7 @@ public:
 
             // Accumulate next ray Li
             Li += accumulate_next_ray_Li(path1, path2);
-            Li += accumulate_next_ray_Li(path2, path1);
+            Li -= accumulate_next_ray_Li(path2, path1);
 
             rRec.type = RadianceQueryRecord::ERadianceNoEmission;
             rRec2.type = RadianceQueryRecord::ERadianceNoEmission;
@@ -618,15 +657,54 @@ public:
     Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const
     {
         // 1. Time sampling
-        Float t0 = rRec.timeSample;
+        Float t0 = rRec.nextSample1D();//rRec.timeSample;
+        std::vector<Float> sampled_signs;
         std::vector<Float> sampled_times;
-        int n_time_samples = 2;
-        if(t0 > 0.5){
-            sampled_times.push_back(0.0);
-            sampled_times.push_back(1.0);
-        } else {
-            sampled_times.push_back(1.0);
-            sampled_times.push_back(0.0);
+        std::vector<Vector2> sampled_offsets;
+        
+        Float reversed = 1.0;
+
+        int n_samples = 2;
+        
+
+        if (strcmp(m_difference_target.c_str(), "time") == 0){
+            if(t0 > 0.5){
+                sampled_times.push_back(1.0);
+                sampled_times.push_back(0.0);
+                reversed=1.0;
+            } else {
+                sampled_times.push_back(0.0);
+                sampled_times.push_back(1.0);
+                reversed=-1.0;
+            }    
+            sampled_offsets.push_back(Vector2(0, 0));
+            sampled_offsets.push_back(Vector2(0, 0));
+        }
+        else if (strcmp(m_difference_target.c_str(), "x") == 0){
+            if(t0 > 0.5){
+                sampled_offsets.push_back(Vector2(0, 0));
+                sampled_offsets.push_back(Vector2(1, 0));
+                reversed=1.0;
+            } else {
+                sampled_offsets.push_back(Vector2(1, 0));
+                sampled_offsets.push_back(Vector2(0, 0));
+                reversed=-1.0;
+            }    
+            sampled_times.push_back(0);
+            sampled_times.push_back(0);
+        }
+        else if (strcmp(m_difference_target.c_str(), "y") == 0){
+            if(t0 > 0.5){
+                sampled_offsets.push_back(Vector2(0, 0));
+                sampled_offsets.push_back(Vector2(0, 1));
+                reversed=1.0;
+            } else {
+                sampled_offsets.push_back(Vector2(0, 1));
+                sampled_offsets.push_back(Vector2(0, 0));
+                reversed=-1.0;
+            }    
+            sampled_times.push_back(0);
+            sampled_times.push_back(0);
         }
 
         // 2. Spatial correlation
@@ -634,37 +712,19 @@ public:
         // (1) no correlation
         if(strcmp(m_spatial_correlation_mode.c_str(), "none") == 0){
             Spectrum Li(0.0f);
-            for(int i=0; i<n_time_samples; i++){
+            for(int i=0; i<n_samples; i++){
                 RayDifferential r2;
                 RadianceQueryRecord rRec2 = rRec;
 
-                Point2 samplePos = Point2(rRec.offset) + Vector2(rRec2.nextSample2D());
+                Point2 samplePos = Point2(rRec.offset) + Vector2(rRec2.nextSample2D()) + sampled_offsets.at(i);
                 Point2 apertureSample = rRec2.nextSample2D();
 
                 rRec2.scene->getSensor()->sampleRayDifferential(
                     r2, samplePos, apertureSample, sampled_times.at(i));
                 r2.scaleDifferential(rRec.diffScaleFactor);
-                Li += Li_with_single_sample(r2, rRec2);
+                Li += Li_with_single_sample(r2, rRec2) * (i==0?1.0:-1.0);
             }
-            return Li * (1.0) / n_time_samples;
-        }
-
-        // (2) pixel correlation
-        else if(strcmp(m_spatial_correlation_mode.c_str(), "pixel") == 0){
-            Spectrum Li(0.0f);
-            for(int i=0; i<n_time_samples; i++){
-                RayDifferential r2;
-                RadianceQueryRecord rRec2 = rRec;
-
-                Point2 samplePos = rRec.samplePos;
-                Point2 apertureSample = rRec.apertureSample;
-
-                rRec2.scene->getSensor()->sampleRayDifferential(
-                    r2, samplePos, apertureSample, sampled_times.at(i));
-                r2.scaleDifferential(rRec.diffScaleFactor);
-                Li += Li_with_single_sample(r2, rRec2);
-            }
-            return Li * (1.0) / n_time_samples;
+            return Li * (1.0) / n_samples * reversed;
         }
 
         // (3) sampler correlation
@@ -672,38 +732,38 @@ public:
             Spectrum Li(0.0f);
             rRec.sampler->saveState();
 
-            for(int i=0; i<n_time_samples; i++){
+            for(int i=0; i<n_samples; i++){
                 RayDifferential r2;
                 RadianceQueryRecord rRec2 = rRec;
                 rRec.sampler->loadSavedState();
 
-                Point2 samplePos = rRec.samplePos;
+                Point2 samplePos = rRec.samplePos + sampled_offsets.at(i);
                 Point2 apertureSample = rRec.apertureSample;
 
                 rRec2.scene->getSensor()->sampleRayDifferential(
                     r2, samplePos, apertureSample, sampled_times.at(i));
                 r2.scaleDifferential(rRec.diffScaleFactor);
-                Li += Li_with_single_sample(r2, rRec2);
+                Li += Li_with_single_sample(r2, rRec2) * (i==0?1.0:-1.0);
             }
-            for(int i=0; i<n_time_samples-1; i++){
+            for(int i=0; i<n_samples-1; i++){
                 rRec.sampler->advance();
             }
-            return Li * (1.0) / n_time_samples;
+            return Li * (1.0) / n_samples * reversed;
         }
 
         // (4) per-ray correlation (sampler / position / mis / stochastic)
         else {
             RayDifferential r1;
             rRec.scene->getSensor()->sampleRayDifferential(
-                r1, rRec.samplePos, rRec.apertureSample, sampled_times.at(0));
+                r1, rRec.samplePos + sampled_offsets.at(0), rRec.apertureSample, sampled_times.at(0));
             r1.scaleDifferential(rRec.diffScaleFactor);
 
             RayDifferential r2;
             rRec.scene->getSensor()->sampleRayDifferential(
-                r2, rRec.samplePos, rRec.apertureSample, sampled_times.at(1));
+                r2, rRec.samplePos + sampled_offsets.at(1), rRec.apertureSample, sampled_times.at(1));
             r2.scaleDifferential(rRec.diffScaleFactor);
 
-            return Li_with_paired_sample(r1, r2, rRec);
+            return Li_with_paired_sample(r1, r2, rRec) * reversed;
         }
     }
 
@@ -746,6 +806,7 @@ private:
     std::string m_mis_method;
     std::string m_time_sampling_mode;
     std::string m_spatial_correlation_mode;
+    std::string m_difference_target;
 
     int m_wave_function_type;
 

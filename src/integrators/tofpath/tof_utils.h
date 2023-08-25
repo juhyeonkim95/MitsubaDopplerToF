@@ -24,7 +24,7 @@ void printVector(Vector p1, Vector p2){
 }
 
 inline Float miWeight(Float pdfA, Float pdfB, float power=1) {
-    if(pdfA + pdfB == 0.0f){
+    if(pdfA == 0.0f && pdfB == 0.0){
         return 0.0f;
     }
     float ap = (pdfA == 0.0)? 0.0 : std::pow(pdfA, power);
