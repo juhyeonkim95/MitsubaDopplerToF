@@ -32,16 +32,16 @@ public:
         : MonteCarloIntegrator(props), DopplerToF(props) {
         m_offset = props.getFloat("image_offset", 1.0); // output can be negative, so add offset to make it positive
 
-        m_time_sampling_mode = props.getString("timeSamplingMode", "uniform");
-        m_use_full_time_stratification = props.getBoolean("useFullTimeStratification", false);
-        m_spatial_correlation_mode = props.getString("spatialCorrelationMode", "none");
+        m_time_sampling_mode = props.getString("time_sampling_mode", "uniform");
+        m_use_full_time_stratification = props.getBoolean("use_full_time_stratification", false);
+        m_spatial_correlation_mode = props.getString("spatial_correlation_mode", "none");
 
         // Use time antithetic samples?
         if(strcmp(m_time_sampling_mode.c_str(), "antithetic_mirror") == 0){
-            std::string antithetic_shift_string = props.getString("antitheticShifts", "0.0");
+            std::string antithetic_shift_string = props.getString("antithetic_shifts", "0.0");
             m_antithetic_shifts = parse_float_array_from_string(antithetic_shift_string);
         } else {
-            int antithetic_shift_number = props.getInteger("antitheticShiftsNumber", 0);
+            int antithetic_shift_number = props.getInteger("antithetic_shifts_number", 0);
             if(antithetic_shift_number > 0){
                 m_antithetic_shifts.clear();
                 for(int i=1; i<antithetic_shift_number; i++){
@@ -50,7 +50,7 @@ public:
                     std::cout << t << std::endl;
                 }
             } else {
-                std::string antithetic_shift_string = props.getString("antitheticShifts", "0.5");
+                std::string antithetic_shift_string = props.getString("antithetic_shifts", "0.5");
                 m_antithetic_shifts = parse_float_array_from_string(antithetic_shift_string);
             }
         }

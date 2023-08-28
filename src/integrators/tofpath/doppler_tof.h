@@ -12,11 +12,11 @@ public:
         m_illumination_modulation_frequency_mhz = props.getFloat("w_g", 30.0f);
         m_illumination_modulation_scale = props.getFloat("g_1", 0.5f);
         m_illumination_modulation_offset = props.getFloat("g_0", 0.5f);
-        m_sensor_modulation_frequency_mhz = props.getFloat("w_f", 30.0f);
-        m_sensor_modulation_phase_offset = props.getFloat("f_phase_offset", 0.0f);
+        m_sensor_modulation_frequency_mhz = props.getFloat("w_s", 30.0f);
+        m_sensor_modulation_phase_offset = props.getFloat("sensor_phase_offset", 0.0f);
         
         // modulation function waveform
-        std::string wave_function_type_str = props.getString("waveFunctionType", "sinusoidal");
+        std::string wave_function_type_str = props.getString("wave_function_type", "sinusoidal");
 
         if(strcmp(wave_function_type_str.c_str(), "sinusoidal") == 0){
             m_wave_function_type = WAVE_TYPE_SINUSOIDAL;
@@ -33,7 +33,7 @@ public:
         
         m_low_frequency_component_only = props.getBoolean("low_frequency_component_only", true);
         m_force_constant_attenuation = props.getBoolean("force_constant_attenuation", false);
-        m_primal_antithetic_mis_power = props.getFloat("primalAntitheticMISPower", 1.0f);
+        m_primal_antithetic_mis_power = props.getFloat("primal_antithetic_mis_power", 1.0f);
     };
 
     Float evalIntegratedModulationWeight(Float st, Float et, Float path_length, Float path_length_at_t, Float f_value_ratio_inc) const{

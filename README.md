@@ -13,43 +13,48 @@ Instead of default float precision, please use `config_double.py'.
 
 Followings are some input parameters.
 
-### Modulation Related
+### ToF Related
 
-* `time` : exposure time in sec (default : 0.0015)
-* `w_g` : illumination frequency in MHz (default : 30)
-* `w_f` : sensor frequency in MHz (default : 30)
-* `f_phase_offset` : sensor phase offset in radian (default : 0)
-* `waveFunctionType` : modulation waveform (default : sinusoidal)
+* `time` : Exposure time in sec. (default : 0.0015)
+* `w_g` : Illumination frequency in MHz. (default : 30)
+* `w_s` : Sensor frequency in MHz. (default : 30)
+* `sensor_phase_offset` : Sensor phase offset in radian. (default : 0)
+* `wave_function_type` : Modulation waveform. Refer following table for exact configuration. (default : sinusoidal)
 
-| `waveFunctionType`        | Sensor Modulation | Light Modulation | Low Pass Filtered |
+| `wave_function_type` | Sensor Modulation | Light Modulation | Low Pass Filtered |
 |-------------|-------------------|------------------|-------------------|
 | `sinusoidal`  | sinusoidal        | sinusoidal       | sinusoidal        |
 | `rectangular` | rectangular       | rectangular      | triangular        |
 | `triangular`  | triangular        | triangular       | Corr(tri, tri)    |
 | `trapezoidal` | trapezoidal       | delta            | trapezoidal       |
 
-* `low_frequency_component_only` : low pass filtering (default : True)
+* `low_frequency_component_only` : Whether to use low pass filtering for modulation functions. (default : true)
+
 
 ### Sampling Related
-* `timeSamplingMode` : time sampling mode. 
-    * `uniform` : 
-    * `stratified` : 
-    * `antithetic` : 
-    * `antithetic_mirror` : 
+* `time_sampling_mode` : Times sampling method.
+    * `uniform` : uniform sampling
+    * `stratified` : stratified sampling
+    * `antithetic` : shifted antithetic sampling
+    * `antithetic_mirror` : mirrored antithetic sampling
+    * `analytic` : analytic integration (biased)
 
-* `antitheticShifts` : antithetic shifts. Multiple input is available separated by underbar. (e.g 0.5 for single antithetic or 0.12_0.35 two antithetics ) (default : 0.5)
-* `antitheticShiftsNumber` : antithetic shifts with equal interval. If this value is set, this is used instead of `antitheticShifts`. (default : 0)
-* `force_constant_attenuation` : force zero-order approximation used in [Heide, 2015]
-* `timeSamplingMode` : time sampling mode. Only valid for `tofantitheticpath`. One of `antithetic` or `antithetic_mirror`.
-* `spatialCorrelationMode` : spatial correlation mode. 
+* `antithetic_shifts` : User defined antithetic shifts. Multiple input is available separated by underbar. (e.g 0.5 for single antithetic sample or 0.12_0.35 two antithetic samples) (default : 0.5 for `antithetic`, 0.0 for `antithetic_mirror`)
+* `antithetic_shifts_number` : Numer of antithetic shifts with equal interval. If this value is set, this is used instead of `antithetic_shifts`. (default : 0)
+* `m_use_full_time_stratification` : Whether to use full stratification over time. If set to `true`, it works differently by `time_sampling_mode`. (default : False)
+    * `stratified` : correlated randomly over different stratum (Fig.8-(b) in the main paper)
+    * `antithetic` : use stratification for primal sample (Fig.8-(e) in the main paper)
+    * `antithetic_mirror` : use stratification for primal sample (Fig.8-(d) in the main paper)
+
+* `spatial_correlation_mode` : Spatial correlation methods. Note that methods start with `ray` explicitly correlate two paths in ray-by-ray style.
     * `none` : no correlation
-    * `pixel` : only correlate camera ray
-    * `position` : correlate intersection point
-    * `direction` : correlate direction (this is equal to sampler correlation)
-    * `selective` : select one of `position`, `direction` based on material property
+    * `pixel` : repeat camera ray (use same pixel coordinate) between multiple rays
+    * `sampler` : repeat sampler between multiple rays
+    * `ray_position` : correlate intersection point between two rays
+    * `ray_sampler` : repeat sampler between two rays
+    * `ray_selective` : select one of `ray_position`, `ray_sampler` based on material property
 
+* `force_constant_attenuation` : Whether to force constant attenuation as [Heide, 2015] did. `true` is using zero-order Taylor approximation while `false` is using first-order Taylor approximation. Only used for `analytic`. (default : false)
+* `primal_antithetic_mis_power` : MIS power for primal and antithetic sample. Only used for other than `analytic`. Refer Sec 4.1 in supplementary material for details. (default : 1.0)
 
 We also included example configurations with result image in `config_example` folder.
-
-The code is still not refactored yet. Also some of notations are different from Mitsuba3 version.
-We will work on this later.
