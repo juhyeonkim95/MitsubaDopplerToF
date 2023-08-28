@@ -1,0 +1,42 @@
+<scene version="0.6.0">
+	<integrator type="dopplertofpath">
+		<integer name="maxDepth" value="3" />
+		<boolean name="strictNormals" value="true" />
+		<float name="w_g" value="30.0" />
+		<float name="w_s" value="30.000666666666667" />
+		<float name="sensor_phase_offset" value="0.0" />
+		<float name="time" value="0.0015" />
+		<float name="primal_antithetic_mis_power" value="1.0" />
+		<string name="antithetic_shifts" value="0.50 " />
+		<string name="wave_function_type" value="sinusoidal" />
+		<string name="spatial_correlation_mode" value="ray_position" />
+		<string name="time_sampling_mode" value="stratified" />
+		<boolean name="use_full_time_stratification" value="false" />
+		<boolean name="low_frequency_component_only" value="true" />
+	</integrator>
+	<sensor type="perspective">
+		<float name="fov" value="19.5" />
+		<transform name="toWorld">
+			<matrix value="-1 0 0 0 0 1 0 1 0 0 -1 6.8 0 0 0 1" />
+		</transform>
+		<sampler type="independent">
+			<integer name="sampleCount" value="512" />
+		</sampler>
+		<film type="mfilm">
+			<integer name="width" value="256" />
+			<integer name="height" value="256" />
+			<string name="fileFormat" value="numpy" />
+			<string name="pixelFormat" value="rgb" />
+			<rfilter type="tent" />
+		</film>
+		<float name="shutterOpen" value="0" />
+		<float name="shutterClose" value="0.0015" />
+		<integer name="timeSampleCount" value="0" />
+		<string name="timeSamplingType" value="uniform" />
+		<boolean name="useSameTimeSamplesOverPathSpace" value="false" />
+		<boolean name="useAntitheticSampling" value="false" />
+		<boolean name="usePixelCorrelation" value="false" />
+		<boolean name="sampleTime" value="true" />
+	</sensor>
+	<include filename="../../../scene_point.xml" />
+</scene>

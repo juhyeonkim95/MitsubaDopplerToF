@@ -8,6 +8,7 @@ Please also check Mitsuba3 implementation at [here](https://github.com/juhyeonki
 
 ## Install
 To compile, follow the original Mitsuba0.5's compliation guide at [here](https://github.com/mitsuba-renderer/mitsuba).
+
 Instead of default float precision, please use double precision (`config_double.py`).
 
 ## Parameter Explanation
@@ -64,7 +65,7 @@ Followings are explanation for each parameter.
 
 ## Usage
 ```
-mitsuba -L error config_example/scene.xml
+mitsuba -L error config_example/example.xml
 ```
 We also included exhaustive example configurations with result image.
 
