@@ -3,7 +3,7 @@ Doppler Time-of-Flight Renderer
 ## About
 ![visualization](assets/teaser.gif)
 
-This repository is the official implementation of "Doppler Time-of-Flight Rendering" by Juhyeon Kim, Wojciech Jarosz, Ioannis Gkioulekas, Adithya Pediredla (SIGGRAPH Asia 2023, journal paper).
+This repository is the official Mitsuba0.5 implementation of "Doppler Time-of-Flight Rendering" by Juhyeon Kim, Wojciech Jarosz, Ioannis Gkioulekas, Adithya Pediredla (SIGGRAPH Asia 2023, journal paper).
 Please also check Mitsuba3 implementation at [here](https://github.com/juhyeonkim95/Mitsuba3ToFRenderer).
 
 ## Install
