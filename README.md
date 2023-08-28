@@ -1,20 +1,18 @@
 Doppler Time-of-Flight Renderer
 ===================================
 ## About
-This is Mitsuba0.5 implementation of "Doppler Time-of-Rendering" submitted to SIGGRAPH Asia 2023.
-Please also check Mitsuba3 implementation at []here.
+This repository is the official implementation of "Doppler Time-of-Flight Rendering" by Juhyeon Kim, Wojciech Jarosz, Ioannis Gkioulekas, Adithya Pediredla (SIGGRAPH Asia 2023, journal paper).
+Please also check Mitsuba3 implementation at [here](https://github.com/juhyeonkim95/Mitsuba3ToFRenderer).
 
-New integrator named `tofpath`, `tofantitheticpath`, `tofanalyticpath`  is added.
-Each is used for uniform/stratified, antithetic sampling and analytic integration.
+## Install
+To compile, follow the original Mitsuba0.5's compliation guide at [here](https://github.com/mitsuba-renderer/mitsuba).
+Instead of default float precision, please use double precision (`config_double.py`).
 
-To compile, follow the original Mitsuba0.5's compliation guide.
-
-Instead of default float precision, please use `config_double.py'.
-
-Followings are some input parameters.
+## Parameter Explanation
+New integrator named `dopplertofpath` is added.
+Followings are explanation for each parameter.
 
 ### ToF Related
-
 * `time` : Exposure time in sec. (default : 0.0015)
 * `w_g` : Illumination frequency in MHz. (default : 30)
 * `w_s` : Sensor frequency in MHz. (default : 30)
@@ -58,3 +56,7 @@ Followings are some input parameters.
 * `primal_antithetic_mis_power` : MIS power for primal and antithetic sample. Only used for other than `analytic`. Refer Sec 4.1 in supplementary material for details. (default : 1.0)
 
 We also included example configurations with result image in `config_example` folder.
+
+## Citation
+If you find this useful for your research, please consider to cite:
+(TBA)
