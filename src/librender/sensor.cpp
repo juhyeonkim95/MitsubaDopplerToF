@@ -29,33 +29,13 @@ Sensor::Sensor(const Properties &props)
     m_shutterOpen = props.getFloat("shutterOpen", 0.0f);
     Float shutterClose = props.getFloat("shutterClose", 0.0f);
     m_shutterOpenTime = shutterClose - m_shutterOpen;
-    m_sampleTime = props.getBoolean("sampleTime", false);
-    
+
     if (m_shutterOpenTime < 0)
         Log(EError, "Shutter opening time must be less than "
                      "or equal to the shutter closing time!");
 
     if (m_shutterOpenTime == 0)
         m_type |= EDeltaTime;
-    
-    // variables related to time sampling
-    m_useAntitheticSampling = props.getBoolean("useAntitheticSampling", false);
-    m_usePixelCorrelation = props.getBoolean("usePixelCorrelation", false);
-    m_useSamplerCorrelation = props.getBoolean("useSamplerCorrelation", false);
-    m_antitheticSamplingByShift = props.getBoolean("antitheticSamplingByShift", true);
-    m_antitheticShift = props.getFloat("antitheticShift", 0.5f);
-
-    m_useSameTimeSamplesOverPathSpace = props.getBoolean("useSameTimeSamplesOverPathSpace", false);
-    m_timeSampleCount = props.getInteger("timeSampleCount", 0);
-    std::string timeSamplingType = props.getString("timeSamplingType", "regular");
-    if(strcmp(timeSamplingType.c_str(), "uniform") == 0){
-        m_timeSamplingType = ETimeSamplingType::ETimeSamplingUniform;
-    } else if (strcmp(timeSamplingType.c_str(), "regular") == 0){
-        m_timeSamplingType = ETimeSamplingType::ETimeSamplingRegular;
-        m_useSameTimeSamplesOverPathSpace = true;
-    } else if (strcmp(timeSamplingType.c_str(), "stratified") == 0){
-        m_timeSamplingType = ETimeSamplingType::ETimeSamplingStratified;
-    }
 }
 
 Sensor::Sensor(Stream *stream, InstanceManager *manager)
@@ -67,26 +47,6 @@ Sensor::Sensor(Stream *stream, InstanceManager *manager)
 }
 
 Sensor::~Sensor() {
-}
-
-Float Sensor::sampleTimeStamp(size_t sampleIndex, Float rv1) const
-{
-    if(this->m_useSameTimeSamplesOverPathSpace){
-        return m_precalculatedTimeSamples[(sampleIndex % m_timeSampleCount)];
-    } else {
-        if(m_timeSamplingType == ETimeSamplingType::ETimeSamplingUniform){
-            return rv1;
-        }
-        else if(m_timeSamplingType == ETimeSamplingType::ETimeSamplingStratified){
-            return (sampleIndex % m_timeSampleCount + rv1) / m_timeSampleCount;
-        }
-    }
-    return 0;
-}
-
-bool Sensor::hasTimeSampler() const
-{
-    return m_timeSampleCount > 0;
 }
 
 void Sensor::serialize(Stream *stream, InstanceManager *manager) const {
@@ -145,22 +105,6 @@ void Sensor::configure() {
     m_invResolution = Vector2(
         (Float) 1 / m_resolution.x,
         (Float) 1 / m_resolution.y);
-    
-    // create pre calculated time samples
-    if(m_timeSampleCount > 0 && m_useSameTimeSamplesOverPathSpace){
-        m_precalculatedTimeSamples = new Float[m_timeSampleCount];
-        for(size_t i=0; i<m_timeSampleCount; i++){
-            if(m_timeSamplingType == ETimeSamplingType::ETimeSamplingUniform){
-                m_precalculatedTimeSamples[i] = m_sampler->next1D();
-            }
-            else if(m_timeSamplingType == ETimeSamplingType::ETimeSamplingStratified){
-                m_precalculatedTimeSamples[i] = (i + m_sampler->next1D()) / m_timeSampleCount;
-            }
-            else if(m_timeSamplingType == ETimeSamplingType::ETimeSamplingRegular){
-                m_precalculatedTimeSamples[i] = (i + 0.5) / m_timeSampleCount;
-            }
-        }
-    }
 }
 
 Spectrum Sensor::sampleRayDifferential(RayDifferential &ray,

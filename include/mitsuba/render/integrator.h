@@ -314,8 +314,10 @@ public:
     Float timeSample;
     Float diffScaleFactor;
     Point2 offset;
-    Float use_positional_correlation_probability;
     int sampleIndex;
+    std::vector<Point2> samplePositions;
+    std::vector<Spectrum> Lis;
+    ImageBlock *block;
 };
 
 /** \brief Abstract base class, which describes integrators
@@ -448,9 +450,7 @@ protected:
 protected:
     /// Used to temporarily cache a parallel process while it is in operation
     ref<ParallelProcess> m_process;
-    bool m_needOffset=false;
-    Float m_position_direction_error_preprocess_portion;
-    ref<Texture> m_position_direction_error_texture;
+    Float m_offset;
 };
 
 /*

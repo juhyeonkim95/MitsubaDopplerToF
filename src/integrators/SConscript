@@ -2,11 +2,10 @@ Import('env', 'sys', 'plugins')
 
 plugins += env.SharedLibrary('ao', ['direct/ao.cpp'])
 plugins += env.SharedLibrary('direct', ['direct/direct.cpp'])
-plugins += env.SharedLibrary('tofpath', ['tofpath/tofpath.cpp'])
-plugins += env.SharedLibrary('tofanalyticpath', ['tofpath/tofanalyticpath.cpp'])
-plugins += env.SharedLibrary('tofantitheticpath', ['tofpath/tofantitheticpath.cpp'])
+
+# tof path (added)
+plugins += env.SharedLibrary('dopplertofpath', ['tofpath/doppler_tof_path.cpp'])
 plugins += env.SharedLibrary('velocity', ['tofpath/velocity.cpp'])
-plugins += env.SharedLibrary('difference', ['tofpath/difference.cpp'])
 
 plugins += env.SharedLibrary('path', ['path/path.cpp'])
 plugins += env.SharedLibrary('volpath', ['path/volpath.cpp'])

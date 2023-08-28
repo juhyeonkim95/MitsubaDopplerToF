@@ -22,6 +22,7 @@
 #include <mitsuba/render/bsdf.h>
 #include <mitsuba/hw/basicshader.h>
 
+
 MTS_NAMESPACE_BEGIN
 
 Integrator::Integrator(const Properties &props)
@@ -46,15 +47,11 @@ const Integrator *Integrator::getSubIntegrator(int idx) const { return NULL; }
 
 SamplingIntegrator::SamplingIntegrator(const Properties &props)
  : Integrator(props) {
-    m_position_direction_error_preprocess_portion = props.getFloat("position_direction_error_preprocess_portion", 0.0);
-    m_position_direction_error_texture = new ConstantSpectrumTexture(props.getSpectrum("position_direction_error_texture", Spectrum(.5f)));
+
 }
 
 void SamplingIntegrator::addChild(const std::string &name, ConfigurableObject *child) {
-    if (child->getClass()->derivesFrom(MTS_CLASS(Texture))
-            && (name == "position_direction_error_texture")) {
-        m_position_direction_error_texture = static_cast<Texture *>(child);
-    }
+
 }
 
 SamplingIntegrator::SamplingIntegrator(Stream *stream, InstanceManager *manager)
@@ -148,14 +145,7 @@ void SamplingIntegrator::wakeup(ConfigurableObject *parent,
     std::map<std::string, SerializableObject *> &) {
     /* Do nothing by default */
 }
-inline Float miWeight(Float pdfA, Float pdfB, float power=1) {
-    if(pdfA + pdfB == 0.0f){
-        return 0.0f;
-    }
-    float ap = (pdfA == 0.0)? 0.0 : std::pow(pdfA, power);
-    float bp = (pdfB == 0.0)? 0.0 : std::pow(pdfB, power);
-    return ap / (ap + bp);
-}
+
 void SamplingIntegrator::renderBlock(const Scene *scene,
         const Sensor *sensor, Sampler *sampler, ImageBlock *block,
         const bool &stop, const std::vector< TPoint2<uint8_t> > &points) const {
@@ -175,15 +165,6 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
 
     uint32_t queryType = RadianceQueryRecord::ESensorRay;
 
-    bool useAntitheticSampling = sensor->useAntitheticSampling();
-    bool usePixelCorrelation = sensor->usePixelCorrelation();
-    bool useSamplerCorrelation = sensor->useSamplerCorrelation();
-    bool isAntitheticSamplingByShift = sensor->isAntitheticSamplingByShift();
-    float antitheticShift = sensor->getAntitheticShift();
-    
-    Float previousTimeSample = 0.0f;
-    Point2 previousSamplePos;
-
     if (!sensor->getFilm()->hasAlpha()) /* Don't compute an alpha channel if we don't have to */
         queryType &= ~RadianceQueryRecord::EOpacity;
 
@@ -192,143 +173,29 @@ void SamplingIntegrator::renderBlock(const Scene *scene,
         if (stop)
             break;
 
-        rRec.sampler->generate(offset);
+        sampler->generate(offset);
 
-        Float positional_correlation_probability;
-        Float q_pos = 1.0f;
-        Float q_dir = 1.0f;
-        Float n_pos = 0.0f;
-        Float n_dir = 0.0f;
-        Float alpha = 10.0f;
-
-        Float epsilon = 1.0f;
-        Float epsilon_decay = 0.8f;
-
-        for (size_t j = 0; j<rRec.sampler->getSampleCount(); j++) {
+        for (size_t j = 0; j<sampler->getSampleCount(); j++) {
             rRec.newQuery(queryType, sensor->getMedium());
-
-            if(rRec.nextSample1D() < epsilon){
-                positional_correlation_probability = 0.5f;
-            } else {
-                Float q_pos_avg = q_pos / n_pos;
-                Float q_dir_avg = q_dir / n_dir;
-                q_pos_avg = std::pow(q_pos_avg, 50.0);
-                q_dir_avg = std::pow(q_dir_avg, 50.0);
-                positional_correlation_probability = q_dir_avg / (q_pos_avg + q_dir_avg);
-                // positional_correlation_probability = q_dir_avg / (q_pos_avg + q_dir_avg);
-            }
-            if(rRec.nextSample1D() < positional_correlation_probability){
-                rRec.use_positional_correlation_probability = 1.0;
-            } else {
-                rRec.use_positional_correlation_probability = 0.0;
-            }
-            if(j > 32){
-                epsilon *= epsilon_decay;
-            }
-
-            // check using antithetic sampling
-            if(useAntitheticSampling){
-                if(j%2 == 1){
-                    if(isAntitheticSamplingByShift){
-                        timeSample = antitheticShift + previousTimeSample;
-                        if(timeSample > 1.0f){
-                            timeSample -= 1.0f;
-                        }
-                    } else {
-                        timeSample = 1.0f - previousTimeSample;
-                    }
-                    if(useSamplerCorrelation){
-                        rRec.sampler->loadSavedState();
-                    }
-                } else {
-                    if(sensor->hasTimeSampler()){
-                    timeSample = sensor->sampleTimeStamp(j, rRec.nextSample1D());
-                    } else {
-                        timeSample = rRec.nextSample1D();
-                    }    
-                    previousTimeSample = timeSample;
-                    if(useSamplerCorrelation){
-                        rRec.sampler->saveState();
-                    }
-                }
-            } else {
-                if(sensor->hasTimeSampler()){
-                    timeSample = sensor->sampleTimeStamp(j, rRec.nextSample1D());
-                } else {
-                    timeSample = rRec.nextSample1D();
-                }
-            }
-
             Point2 samplePos(Point2(offset) + Vector2(rRec.nextSample2D()));
-            if(useAntitheticSampling && j%2 == 1 && usePixelCorrelation){
-                samplePos = previousSamplePos;
-            }
-
-            previousSamplePos = samplePos;
-
 
             if (needsApertureSample)
                 apertureSample = rRec.nextSample2D();
-            
-            rRec.samplePos = samplePos;
-            rRec.apertureSample = apertureSample;
-            rRec.timeSample = timeSample;
-            rRec.diffScaleFactor = diffScaleFactor;
-            rRec.offset = Point2(offset);
-            rRec.sampleIndex = j;
-            // rRec.use_positional_correlation_probability = use_positional_correlation_probability;
-            
+            if (needsTimeSample)
+                timeSample = rRec.nextSample1D();
+
             Spectrum spec = sensor->sampleRayDifferential(
                 sensorRay, samplePos, apertureSample, timeSample);
 
             sensorRay.scaleDifferential(diffScaleFactor);
 
             spec *= Li(sensorRay, rRec);
-
-            Float timePDF = 1.0;
-            if(needsTimeSample){
-                timePDF = sensor->pdfTime(sensorRay, ELength);
-            }
-
-            Float variance = spec[0] * spec[0] + spec[1] * spec[1] + spec[2] * spec[2];
-
-            spec /= timePDF;
-            
-            if(rRec.use_positional_correlation_probability == 1.0){
-                q_pos += variance;
-                //q_pos = variance * alpha + q_pos * (1 - alpha);
-                n_pos += 1;
-            } else {
-                q_dir += variance;
-                //q_dir = variance * alpha + q_dir * (1 - alpha);
-                n_dir += 1;
-            }
-
-
-            if(this->m_needOffset){
-                Spectrum Li_offset(1.0f);
-                // spec = Spectrum(use_positional_correlation_probability);
-                block->put(samplePos, Li_offset + spec, rRec.alpha);
-            } else {
-                block->put(samplePos, spec, rRec.alpha);
-            }
-            
-            rRec.sampler->advance();
-            if(useAntitheticSampling && usePixelCorrelation){
-                if(j%2 == 1){
-                    rRec.sampler->advance();
-                }
-            }
+            block->put(samplePos, spec, rRec.alpha);
+            sampler->advance();
         }
-        
-        // printf("1. %f\n", q_pos);
-        // printf("2. %f\n", q_dir);
-        // printf("3. %f\n", n_pos);
-        // printf("4. %f\n", n_dir);
-        
-
     }
 }
+
 
 MonteCarloIntegrator::MonteCarloIntegrator(const Properties &props) : SamplingIntegrator(props) {
     /* Depth to begin using russian roulette */

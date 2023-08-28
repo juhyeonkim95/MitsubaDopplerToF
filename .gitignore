@@ -57,3 +57,4 @@ mitsuba.*.log
 
 /src/integrators/tofpathtrash
 /src/integrators/tofpath/difference.cpp
+/src/librender/trash

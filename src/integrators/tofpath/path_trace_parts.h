@@ -1,6 +1,6 @@
 #include <mitsuba/render/scene.h>
 #include <mitsuba/core/statistics.h>
-#include "tof_utils.h"
+#include "utils.h"
 
 
 using namespace mitsuba;

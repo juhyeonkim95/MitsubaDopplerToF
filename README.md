@@ -13,6 +13,8 @@ Instead of default float precision, please use `config_double.py'.
 
 Followings are some input parameters.
 
+### Modulation Related
+
 * `time` : exposure time in sec (default : 0.0015)
 * `w_g` : illumination frequency in MHz (default : 30)
 * `w_f` : sensor frequency in MHz (default : 30)
@@ -26,9 +28,17 @@ Followings are some input parameters.
 | `triangular`  | triangular        | triangular       | Corr(tri, tri)    |
 | `trapezoidal` | trapezoidal       | delta            | trapezoidal       |
 
+* `low_frequency_component_only` : low pass filtering (default : True)
+
+### Sampling Related
+* `timeSamplingMode` : time sampling mode. 
+    * `uniform` : 
+    * `stratified` : 
+    * `antithetic` : 
+    * `antithetic_mirror` : 
+
 * `antitheticShifts` : antithetic shifts. Multiple input is available separated by underbar. (e.g 0.5 for single antithetic or 0.12_0.35 two antithetics ) (default : 0.5)
 * `antitheticShiftsNumber` : antithetic shifts with equal interval. If this value is set, this is used instead of `antitheticShifts`. (default : 0)
-* `low_frequency_component_only` : low pass filtering (default : True)
 * `force_constant_attenuation` : force zero-order approximation used in [Heide, 2015]
 * `timeSamplingMode` : time sampling mode. Only valid for `tofantitheticpath`. One of `antithetic` or `antithetic_mirror`.
 * `spatialCorrelationMode` : spatial correlation mode. 
