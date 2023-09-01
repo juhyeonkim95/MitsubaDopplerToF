@@ -363,12 +363,14 @@ public:
         }
         
         G = (bRec.sampledType & BSDF::EDelta) ? 1.0 : std::abs(dot(its.shFrame.n, ray.d)) / (its.t * its.t);
-        path_length += its.t;
+        
 
         /* Keep track of the throughput and relative
             refractive index along the path */
         path_throughput *= bsdfVal;
         eta *= bRec.eta;
+
+        path_length += its.t * eta;
 
         /* If a luminaire was hit, estimate the local illumination and
             weight using the power heuristic */
