@@ -85,7 +85,7 @@ public:
         Float eta = 1.0f;
 
         Float path_length = 0;
-        path_length += its.t;
+        path_length += its.t * eta;
 
         while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
             if (!its.isValid()) {
@@ -210,11 +210,11 @@ public:
                 }
             }
 
-            path_length += its.t;
             /* Keep track of the throughput and relative
                refractive index along the path */
             throughput *= bsdfWeight;
             eta *= bRec.eta;
+            path_length += its.t * eta;
 
             /* If a luminaire was hit, estimate the local illumination and
                weight using the power heuristic */

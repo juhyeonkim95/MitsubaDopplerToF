@@ -15,6 +15,12 @@ public:
         m_sensor_modulation_frequency_mhz = props.getFloat("w_s", 30.0f);
         m_sensor_modulation_phase_offset = props.getFloat("sensor_phase_offset", 0.0f);
         
+        Float hetero_frequency = props.getFloat("hetero_frequency", -1000.0f);
+        if (hetero_frequency > -1000.0f){
+            Float w_d = 1 / m_time * hetero_frequency;
+            m_sensor_modulation_frequency_mhz = m_illumination_modulation_frequency_mhz + w_d * 1e-6;
+        }
+
         // modulation function waveform
         std::string wave_function_type_str = props.getString("wave_function_type", "sinusoidal");
 
@@ -31,19 +37,19 @@ public:
             m_wave_function_type = WAVE_TYPE_TRAPEZOIDAL;
         }
         
-        m_low_frequency_component_only = props.getBoolean("low_frequency_component_only", true);
+        m_low_srequency_component_only = props.getBoolean("low_srequency_component_only", true);
         m_force_constant_attenuation = props.getBoolean("force_constant_attenuation", false);
         m_primal_antithetic_mis_power = props.getFloat("primal_antithetic_mis_power", 1.0f);
     };
 
     Float evalIntegratedModulationWeight(Float st, Float et, Float path_length, Float path_length_at_t, Float f_value_ratio_inc) const{
         Float w_g = 2 * M_PI * m_illumination_modulation_frequency_mhz * 1e6;
-        Float w_f = 2 * M_PI * m_sensor_modulation_frequency_mhz * 1e6;
+        Float w_s = 2 * M_PI * m_sensor_modulation_frequency_mhz * 1e6;
         Float temp = (2 * M_PI * m_illumination_modulation_frequency_mhz) / 300;
         Float w_delta = - temp * (path_length_at_t - path_length) / (et - st);
         Float phi = temp * path_length;
 
-        Float a = (w_f - w_g - w_delta);
+        Float a = (w_s - w_g - w_delta);
         Float b = phi;
         Float c = m_force_constant_attenuation? 0 : f_value_ratio_inc / (et - st);
         
@@ -54,18 +60,18 @@ public:
 
     Float evalModulationWeight(Float &ray_time, Float &path_length) const{
         Float w_g = 2 * M_PI * m_illumination_modulation_frequency_mhz * 1e6;
-        Float w_f = 2 * M_PI * m_sensor_modulation_frequency_mhz * 1e6;
+        Float w_s = 2 * M_PI * m_sensor_modulation_frequency_mhz * 1e6;
         Float w_d = 2 * M_PI * (m_sensor_modulation_frequency_mhz - m_illumination_modulation_frequency_mhz) * 1e6;
         Float phi = (2 * M_PI * m_illumination_modulation_frequency_mhz) / 300 * path_length;
 
-        if(m_low_frequency_component_only){
+        if(m_low_srequency_component_only){
             Float t = w_d * ray_time + m_sensor_modulation_phase_offset + phi;
             Float sg_t = 0.5 * m_illumination_modulation_scale * evalModulationFunctionValueLowPass(m_wave_function_type, t);
             return sg_t;
         } 
         
         Float t1 = w_g * ray_time - phi;
-        Float t2 = w_f * ray_time + m_sensor_modulation_phase_offset;
+        Float t2 = w_s * ray_time + m_sensor_modulation_phase_offset;
         Float g_t = m_illumination_modulation_scale * evalModulationFunctionValue(m_wave_function_type, t1) + m_illumination_modulation_offset;
         Float s_t = evalModulationFunctionValue(m_wave_function_type, t2);
         return s_t * g_t;
@@ -174,7 +180,7 @@ protected:
     Float m_sensor_modulation_phase_offset;
     Float m_time;
     
-    bool m_low_frequency_component_only;
+    bool m_low_srequency_component_only;
     bool m_force_constant_attenuation;
     float m_primal_antithetic_mis_power;
 
