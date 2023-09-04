@@ -15,9 +15,12 @@ public:
         m_sensor_modulation_frequency_mhz = props.getFloat("w_s", 30.0f);
         m_sensor_modulation_phase_offset = props.getFloat("sensor_phase_offset", 0.0f);
         
-        Float hetero_frequency = props.getFloat("hetero_frequency", -1000.0f);
-        if (hetero_frequency > -1000.0f){
-            Float w_d = 1 / m_time * hetero_frequency;
+        // syntactic sugar
+        if(props.hasProperty("hetero_offset")){
+            m_sensor_modulation_phase_offset = props.getFloat("hetero_offset", 0.0) * 2 * M_PI;
+        }
+        if(props.hasProperty("hetero_frequency")){
+            Float w_d = 1 / m_time * props.getFloat("hetero_frequency", 0.0);
             m_sensor_modulation_frequency_mhz = m_illumination_modulation_frequency_mhz + w_d * 1e-6;
         }
 
