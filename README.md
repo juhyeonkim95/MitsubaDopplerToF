@@ -1,10 +1,11 @@
-Doppler Time-of-Flight Renderer
+Mitsuba0.5 Doppler Time-of-Flight Renderer
 ===================================
 ## About
 ![visualization](assets/teaser.gif)
-
-This repository is the official Mitsuba0.5 implementation of "Doppler Time-of-Flight Rendering" by Juhyeon Kim, Wojciech Jarosz, Ioannis Gkioulekas, Adithya Pediredla (SIGGRAPH Asia 2023, journal paper).
-Please also check Mitsuba3 implementation at [here](https://github.com/juhyeonkim95/Mitsuba3DopplerToF).
+This repository is the official Mitsuba0.5 implementation of "Doppler Time-of-Flight Rendering" (SIGGRAPH Asia 2023, journal paper).
+Please also check Mitsuba3 implementation at [here](https://anonymous.4open.science/r/Mitsuba3DopplerToF-4E61/README.md).
+<!-- This repository is the official Mitsuba0.5 implementation of "Doppler Time-of-Flight Rendering" by Juhyeon Kim, Wojciech Jarosz, Ioannis Gkioulekas, Adithya Pediredla (SIGGRAPH Asia 2023, journal paper).
+Please also check Mitsuba3 implementation at [here](https://github.com/juhyeonkim95/Mitsuba3DopplerToF). -->
 
 ## Install
 To compile, follow the original Mitsuba0.5's compliation guide at [here](https://github.com/mitsuba-renderer/mitsuba).
@@ -21,8 +22,13 @@ Followings are explanation for each parameter.
 * `g_1` : Illumination modulation scale. (default : 0.5)
 * `g_0` : Illumination modulation offset. (default : 0.5)
 * `w_s` : Sensor frequency in MHz. (default : 30)
-* `hetero_frequency` : Relative heterodyne frequency. 0 for perfect homodyne and 1 for perfect heterodyne. This is a syntactic sugar for `w_s`. If this value is set, `w_s` is calculated from this value. (default : not used)
 * `sensor_phase_offset` : Sensor phase offset in radian. (default : 0)
+
+* We also provide some syntactic sugar parameters with normalization.
+    * `hetero_frequency` : Relative heterodyne frequency. 0 for perfect homodyne and 1 for perfect heterodyne. This is a syntactic sugar for `w_s`. If this value is set, `w_s` is calculated from this value. (default : not used)
+    * `hetero_offset` : Relative heterodyne offset. 0 for 0 radian and 1 for 2pi radian. This is a syntactic sugar for `sensor_phase_offset`. If this value is set, `sensor_phase_offset` is calculated from this value. (default : not used)
+
+
 * `wave_function_type` : Modulation waveform. Refer following table for exact configuration. (default : sinusoidal)
 
 | `wave_function_type` | Sensor Modulation | Light Modulation | Low Pass Filtered |
@@ -45,7 +51,7 @@ Followings are explanation for each parameter.
 
 * `antithetic_shifts` : User defined antithetic shifts. Multiple input is available separated by underbar. (e.g 0.5 for single antithetic sample or 0.12_0.35 two antithetic samples) (default : 0.5 for `antithetic`, 0.0 for `antithetic_mirror`)
 * `antithetic_shifts_number` : Number of antithetic shifts with equal interval. If this value is set, this is used instead of `antithetic_shifts`. This is also used for number of stratum for `stratified`. (default : 0)
-* `m_use_full_time_stratification` : Whether to use full stratification over time. If set to `true`, it works differently by `time_sampling_mode`. (default : false)
+* `use_full_time_stratification` : Whether to use full stratification over time. If set to `true`, it works differently by `time_sampling_mode`. (default : false)
     * `stratified` : correlated randomly over different stratum (Fig.8-(b) in the main paper)
     * `antithetic` : use stratification for primal sample (Fig.8-(e) in the main paper)
     * `antithetic_mirror` : use stratification for primal sample (Fig.8-(d) in the main paper)
