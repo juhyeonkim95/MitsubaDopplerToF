@@ -35,6 +35,7 @@ public:
         m_time_sampling_mode = props.getString("time_sampling_mode", "uniform");
         m_use_full_time_stratification = props.getBoolean("use_full_time_stratification", false);
         m_spatial_correlation_mode = props.getString("spatial_correlation_mode", "none");
+        m_reconnection_threshold = props.getFloat("m_reconnection_threshold", 0.5);
 
         // Use time antithetic samples?
         if(strcmp(m_time_sampling_mode.c_str(), "antithetic_mirror") == 0){
@@ -281,27 +282,35 @@ public:
         rRec2.rayIntersect(ray2);
         PathTracePart path2(ray2, rRec2, 1);
 
+        PathTracePart path1_next(ray1, rRec, 0);
+
         bool analytic = strcmp(m_time_sampling_mode.c_str(), "analytic") == 0;
 
         while(rRec.depth <= m_maxDepth || m_maxDepth < 0){
+            Point2 bsdf_sample = rRec.nextSample2D();
+            path1_next = path1;
+            path1_next.get_next_ray_from_sample(bsdf_sample);
+
             bool use_positional_correlation = false;
             if(strcmp(m_spatial_correlation_mode.c_str(), "ray_position") == 0){
                 use_positional_correlation = true;
             }
-            if(strcmp(m_spatial_correlation_mode.c_str(), "ray_selective") == 0 && 
-                path1.its.isValid() && path2.its.isValid()){
+            if(strcmp(m_spatial_correlation_mode.c_str(), "ray_adaptive") == 0 && 
+                path1.its.isValid() && path2.its.isValid() && path1_next.its.isValid()){
                 const BSDF *bsdf1 = path1.its.getBSDF(path1.ray);
                 Float its1_roughness = bsdf1->getRoughness(path1.its, 0);
                 const BSDF *bsdf2 = path1.its.getBSDF(path2.ray);
                 Float its2_roughness = bsdf2->getRoughness(path2.its, 0);
-                its1_roughness = std::min(its1_roughness, 2.0);
-                its2_roughness = std::min(its2_roughness, 2.0);
+                const BSDF *bsdf1_next = path1_next.its.getBSDF(path1_next.ray);
+                Float its1_roughness_next = bsdf1_next->getRoughness(path1_next.its, 0);
 
-                if(its1_roughness > 0.5 && its2_roughness > 0.5){
+                if(its1_roughness > m_reconnection_threshold
+                 && its2_roughness > m_reconnection_threshold 
+                 && its1_roughness_next > m_reconnection_threshold){
                     use_positional_correlation = true;
                 }
             }
-           
+
             /* Only continue if:
             1. The current path length is below the specifed maximum
             2. If 'strictNormals'=true, when the geometric and shading
@@ -370,9 +379,7 @@ public:
             /* ==================================================================== */
             /*                            BSDF sampling                             */
             /* ==================================================================== */
-
-            Point2 bsdf_sample = rRec.nextSample2D();
-            path1.get_next_ray_from_sample(bsdf_sample);
+            path1 = path1_next;
 
             if(path1.path_terminated){
                 break;
@@ -798,6 +805,7 @@ private:
     Float m_antithetic_shift;
     std::vector<float> m_antithetic_shifts;
     bool m_use_full_time_stratification;
+    Float m_reconnection_threshold;
 };
 
 MTS_IMPLEMENT_CLASS_S(DopplerToFPathTracer, false, MonteCarloIntegrator)
