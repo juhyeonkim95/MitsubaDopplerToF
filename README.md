@@ -1,11 +1,11 @@
-# Mitsuba0.5 Doppler Time-of-Flight Renderer
+# Mitsuba0.6 Doppler Time-of-Flight Renderer
 
 ### [Project Page](https://juhyeonkim95.github.io/project-pages/dopplertof/) | [Paper](https://arxiv.org/abs/2309.16163) | [Code(Mitsuba3)](https://github.com/juhyeonkim95/Mitsuba3DopplerToF)
 ## About
 ![visualization](assets/teaser.gif)
 <!-- This repository is the official Mitsuba3 implementation of "Doppler Time-of-Flight Rendering" (SIGGRAPH Asia 2023, journal paper).
 Please also check Mitsuba0.5 implementation at [here](https://anonymous.4open.science/r/MitsubaDopplerToF-EAC7/README.md). -->
-This repository is the official Mitsuba3 implementation of "Doppler Time-of-Flight Rendering" by Juhyeon Kim, Wojciech Jarosz, Ioannis Gkioulekas, Adithya Pediredla (SIGGRAPH Asia 2023, journal paper).
+This repository is the official Mitsuba0.6 implementation of "Doppler Time-of-Flight Rendering" by Juhyeon Kim, Wojciech Jarosz, Ioannis Gkioulekas, Adithya Pediredla (SIGGRAPH Asia 2023, journal paper).
 Please also check Mitsuba3 implementation at [here](https://github.com/juhyeonkim95/Mitsuba3DopplerToF).
 
 ## Install
